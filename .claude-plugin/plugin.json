@@ -1,0 +1,6 @@
+{
+  "name": "next-steps",
+  "version": "0.1.0",
+  "description": "Turns Claude's latest reply into a numbered, tickable list of next steps (PRs, SQL, commands, files) with links and copy buttons.",
+  "types": "./types/index.d.ts"
+}
