@@ -4,7 +4,7 @@ A Claude Code mod that turns Claude's latest reply into a numbered, tickable che
 
 - One step per line, in the order to do them, each tagged by kind: PR, SQL, RUN, FILE, DEPLOY, REVIEW, CHECK, DO.
 - SQL and commands shown verbatim in a highlighted box with a Copy button.
-- Files linked to GitHub on your current branch, with a Copy path button.
+- Files linked to GitHub on the branch that actually has them: the session's own, or another git worktree's (named beside the link), with a Copy path button. A file on a branch not pushed yet links to the local file instead.
 - "Open a PR" steps get a ready-made GitHub link for the current branch.
 - Tick steps off; the first unticked one is marked `← next`.
 - Short or action-free replies leave the list alone.

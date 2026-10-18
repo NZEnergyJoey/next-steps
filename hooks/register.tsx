@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Repo, Step, StepKind, StepsStatus } from '../types'
+import type { FileLink, Repo, Step, StepKind, StepsStatus } from '../types'
 
 const PANE = 'next-steps'
 const COMMAND = 'next-steps'
@@ -35,7 +35,7 @@ Return ONLY a JSON array, no prose, no code fence. Each item:
  "detail": "optional one short sentence of context",
  "copy": "optional EXACT text to paste: the full SQL, shell command, or snippet, copied verbatim from the reply",
  "language": "optional highlighter id for copy: sql, bash, ts, json ...",
- "path": "optional file path exactly as written in the reply",
+ "path": "optional file path exactly as written in the reply; if the reply says the file is in a particular folder, give that folder joined with the path",
  "url": "optional URL exactly as written in the reply"}
 
 Rules:
@@ -114,11 +114,112 @@ let repoRoot = ''
 const relative = (path: string) =>
   repoRoot !== '' && path.startsWith(repoRoot + '/') ? path.slice(repoRoot.length + 1) : path.replace(/^\.\//, '')
 
+const blobHref = (r: Pick<Repo, 'owner' | 'name'>, branch: string, rel: string) =>
+  `https://github.com/${r.owner}/${r.name}/blob/${branch.split('/').map(encodeURIComponent).join('/')}/${rel.split('/').map(encodeURIComponent).join('/')}`
+
+/** file:// URL for a local path: `C:\a b\x` becomes `file:///C:/a%20b/x`, `/x` becomes `file:///x`. */
+export function localHref(abs: string): string {
+  const joined = slashes(abs)
+    .split('/')
+    .map((s, i) => (i === 0 && /^[A-Za-z]:$/.test(s) ? s : encodeURIComponent(s)))
+    .join('/')
+  return `file://${joined.startsWith('/') ? '' : '/'}${joined}`
+}
+
 function fileHref(r: Repo | null, path: string): string {
   const rel = relative(path)
-  if (r) return `https://github.com/${r.owner}/${r.name}/blob/${r.branch}/${rel.split('/').map(encodeURIComponent).join('/')}`
+  if (r) return blobHref(r, r.branch, rel)
 
-  return `file://${rel.startsWith('/') ? rel : `${repoRoot}/${rel}`}`
+  return localHref(rel.startsWith('/') ? rel : `${repoRoot}/${rel}`)
+}
+
+// ── Which worktree/branch really holds a step's file ───────────────────────────
+// The session's own branch is often not where the work is: a task built in another git worktree leaves its files on
+// that worktree's branch, and a link to the session's branch is a GitHub 404. So each step's file is looked up once,
+// when the reply is read: an absolute path names its worktree outright; a relative one is looked for in the session's
+// worktree first, then in every other worktree of the same repository (newest commit touching it wins).
+
+export type Worktree = { root: string; branch: string }
+
+/** `git worktree list --porcelain` → worktrees with a branch (detached and bare ones are skipped). */
+export function parseWorktrees(porcelain: string): Worktree[] {
+  const out: Worktree[] = []
+  for (const block of porcelain.replace(/\r/g, '').split(/\n\n+/)) {
+    const root = /^worktree (.+)$/m.exec(block)?.[1]
+    const branch = /^branch refs\/heads\/(.+)$/m.exec(block)?.[1]
+    if (root && branch) out.push({ root: slashes(root), branch })
+  }
+  return out
+}
+
+/** Forward slashes, no trailing slash, no leading `./`. */
+export const slashes = (p: string) => p.trim().replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '')
+
+const isAbsolute = (p: string) => /^([A-Za-z]:)?\//.test(p)
+const sameStart = (path: string, root: string) => path.toLowerCase().startsWith(root.toLowerCase() + '/')
+
+/** The worktree an absolute path is inside (the deepest, as worktrees may nest) and the path relative to it. */
+export function worktreeOf(abs: string, worktrees: Worktree[]): { worktree: Worktree; rel: string } | undefined {
+  const hit = worktrees.filter(w => sameStart(abs, w.root)).sort((a, b) => b.root.length - a.root.length)[0]
+  return hit ? { worktree: hit, rel: abs.slice(hit.root.length + 1) } : undefined
+}
+
+async function locateFile($: EngineInterface, r: Repo | null, path: string): Promise<FileLink | undefined> {
+  const git = (cwd: string, args: string[]) =>
+    $.process.run(['git', ...args], { cwd, timeoutMs: 10000 }).then(
+      x => ({ ok: x.exitCode === 0, out: x.stdout.trim() }),
+      () => ({ ok: false, out: '' }),
+    )
+  const own = slashes(repoRoot)
+  const worktrees = parseWorktrees((await git(own, ['worktree', 'list', '--porcelain'])).out)
+  if (worktrees.length === 0) return undefined
+  const p = slashes(path)
+
+  let found: { worktree: Worktree; rel: string } | undefined
+  if (isAbsolute(p)) {
+    found = worktreeOf(p, worktrees)
+  } else {
+    const rel = relative(p)
+    const has = async (w: Worktree) => (await git(w.root, ['cat-file', '-e', `HEAD:${rel}`])).ok
+    const mine = worktrees.find(w => w.root.toLowerCase() === own.toLowerCase())
+    if (mine && (await has(mine))) found = { worktree: mine, rel }
+    else {
+      // All worktrees at once (a repository can have dozens); the newest commit touching the file wins.
+      const hits = await Promise.all(
+        worktrees.filter(w => w !== mine).map(async w => {
+          if (!(await has(w))) return undefined
+          const when = Number((await git(w.root, ['log', '-1', '--format=%ct', 'HEAD', '--', rel])).out) || 0
+          return { w, when }
+        }),
+      )
+      const best = hits.filter(h => h !== undefined).sort((a, b) => b.when - a.when)[0]
+      if (best) found = { worktree: best.w, rel }
+    }
+  }
+  if (!found) return undefined
+
+  const { worktree, rel } = found
+  const abs = `${worktree.root}/${rel}`
+  const elsewhere = worktree.root.toLowerCase() !== own.toLowerCase()
+  // GitHub only shows what was pushed: the branch's remote-tracking ref must exist and hold the file.
+  const pushed = r !== null && (await git(worktree.root, ['cat-file', '-e', `refs/remotes/origin/${worktree.branch}:${rel}`])).ok
+  return {
+    href: pushed && r ? blobHref(r, worktree.branch, rel) : localHref(abs),
+    label: rel,
+    branch: elsewhere || !pushed ? worktree.branch + (pushed ? '' : ', not on GitHub yet') : undefined,
+    copy: elsewhere ? abs : rel,
+  }
+}
+
+async function withFiles($: EngineInterface, found: Step[]): Promise<Step[]> {
+  const r = await read($, repo)
+  return Promise.all(
+    found.map(async step => {
+      if (!step.path) return step
+      const file = await locateFile($, r, step.path).catch(() => undefined)
+      return file ? { ...step, file } : step
+    }),
+  )
 }
 
 function prHref(r: Repo | null, step: Step): string | undefined {
@@ -151,7 +252,7 @@ async function summarise($: EngineInterface, answer: string) {
     return
   }
   const stamp = await $.clock.now()
-  const found = parseSteps(result.text, stamp)
+  const found = await withFiles($, parseSteps(result.text, stamp))
   if (found.length > 0) {
     await update($, steps, () => found)
     await update($, done, () => [])
@@ -285,12 +386,13 @@ export const register: Register = on => {
                   {step.path && (
                     <Box flexDirection="row" gap={1}>
                       <Text>
-                        📄 <Link href={fileHref(r, step.path)} label={relative(step.path)} />
+                        📄 <Link href={step.file?.href ?? fileHref(r, step.path)} label={step.file?.label ?? relative(step.path)} />
+                        {step.file?.branch && <Text dimColor> ({step.file.branch})</Text>}
                       </Text>
                       <Button
                         key={`path-${step.id}`}
                         label="Copy path"
-                        onPress={press => copyText($, relative(step.path ?? ''), 'path', press.surface)}
+                        onPress={press => copyText($, step.file?.copy ?? relative(step.path ?? ''), 'path', press.surface)}
                       />
                     </Box>
                   )}
