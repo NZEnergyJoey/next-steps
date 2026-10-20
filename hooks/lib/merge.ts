@@ -80,6 +80,7 @@ export function reconcile(existing: Step[], incoming: Incoming[], resolvedIds: s
   }
 
   incoming.forEach((inc, i) => {
+    if (added.some(a => a.key === inc.key)) return // the same step twice in one reply is one step
     const hit = findMatch(list, inc, taken, stamp)
     if (hit) {
       taken.add(hit.id)

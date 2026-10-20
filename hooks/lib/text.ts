@@ -34,12 +34,12 @@ export function fnv(text: string): string {
 
 const STOP = new Set(['the', 'and', 'for', 'with', 'then', 'that', 'this', 'your', 'you', 'please', 'now', 'its', 'are', 'from'])
 
-/** The words of a title that carry its meaning, lower case. */
+/** The words of a title that carry its meaning, lower case. A lone digit counts: "chore 1" is not "chore 2". */
 export const words = (title: string): string[] =>
   title
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter(w => w.length >= 2 && !STOP.has(w))
+    .filter(w => (w.length >= 2 || /^\d$/.test(w)) && !STOP.has(w))
 
 /** How alike two titles are, 0 to 1 (shared words over all words). */
 export function similarity(a: string, b: string): number {
