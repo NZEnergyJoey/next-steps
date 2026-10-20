@@ -1,428 +1,326 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, UiPressArgument } from 'claude-code'
 
-import type { FileLink, Repo, Step, StepKind, StepsStatus } from '../types'
+import type { Reveal, Step, StepStatus } from '../types'
+
+import { MIN_ANSWER, readReply } from './lib/model'
+import { reconcile, setStatus, type MergeResult } from './lib/merge'
+import { gitRunner, readRepo, withFiles } from './lib/git'
+import { ordered, statusText, summarise } from './lib/select'
+import { DAY_MS, load, prune, save } from './lib/store'
+import { clip, fnv, plural } from './lib/text'
+import { taskbar, hasBand } from './ui/taskbar'
+import { panel } from './ui/panel'
+
+// Names other code (and the tests) have always been able to import from here.
+export { parseSteps, parseExtraction } from './lib/extract'
+export { localHref, parseRemote, parseWorktrees, slashes, worktreeOf } from './lib/git'
+
+// ── The session's values ───────────────────────────────────────────────────────
+// Held by the host, so a hot reload of this code keeps them (module variables it does not). What must outlive the
+// session too is written to the store as well (lib/store.ts). The engine reads these declarations from this file.
+
+const stepsAtom = atom({ plugin: 'next-steps', key: 'steps' } as const, [])
+const statusAtom = atom({ plugin: 'next-steps', key: 'status' } as const, 'idle')
+const errorAtom = atom({ plugin: 'next-steps', key: 'error' } as const, null)
+const updatedAtAtom = atom({ plugin: 'next-steps', key: 'updatedAt' } as const, 0)
+const lastAnswerAtom = atom({ plugin: 'next-steps', key: 'lastAnswer' } as const, '')
+const repoAtom = atom({ plugin: 'next-steps', key: 'repo' } as const, null)
+const rootAtom = atom({ plugin: 'next-steps', key: 'root' } as const, '')
+const selectedAtom = atom({ plugin: 'next-steps', key: 'selected' } as const, null)
+const revealAtom = atom({ plugin: 'next-steps', key: 'reveal' } as const, { optional: false, earlier: false, closed: false } satisfies Reveal)
+const paneOpenAtom = atom({ plugin: 'next-steps', key: 'isPaneOpen' } as const, false)
 
 const PANE = 'next-steps'
 const COMMAND = 'next-steps'
+/** Rows asked for when the panel opens above the prompt; the person's own size wins. */
+const PANE_ROWS = 14
+/** A failed read is tried once more after this long. */
+const RETRY_MS = 1500
 
-const steps = atom({ plugin: 'next-steps', key: 'steps' } as const, [])
-const done = atom({ plugin: 'next-steps', key: 'done' } as const, [])
-const status = atom({ plugin: 'next-steps', key: 'status' } as const, 'idle')
-const updatedAt = atom({ plugin: 'next-steps', key: 'updatedAt' } as const, 0)
-const lastAnswer = atom({ plugin: 'next-steps', key: 'lastAnswer' } as const, '')
-const repo = atom({ plugin: 'next-steps', key: 'repo' } as const, null)
+// ── Reading a reply, one at a time ─────────────────────────────────────────────
+// These live in the module and so start over on a hot reload, which is harmless: the worst case is one reply read twice,
+// and reading is idempotent (a step that comes round again is the same step).
 
-// Replies shorter than this are chat, not a hand-off: they never replace the list.
-const MIN_ANSWER = 160
+let busy = false
+let queued: { answer: string; force: boolean } | undefined
+let lastRead = ''
 
-const KINDS: Record<StepKind, { label: string; color: string }> = {
-  pr: { label: 'PR', color: 'magenta' },
-  sql: { label: 'SQL', color: 'cyan' },
-  command: { label: 'RUN', color: 'green' },
-  file: { label: 'FILE', color: 'blue' },
-  deploy: { label: 'DEPLOY', color: 'red' },
-  review: { label: 'REVIEW', color: 'yellow' },
-  check: { label: 'CHECK', color: 'yellow' },
-  action: { label: 'DO', color: 'white' },
-}
+/**
+ * Reads a reply into the list. One read runs at a time; a request that arrives meanwhile waits, and only the newest
+ * waiting one is kept, so a burst of replies or refreshes costs two reads, not many. A reply already read is skipped
+ * unless `force` (an explicit refresh) says otherwise.
+ */
+async function refresh($: EngineInterface, answer: string, force: boolean): Promise<void> {
+  if (busy) {
+    queued = { answer, force: force || queued?.force === true }
 
-const SYSTEM = `You turn a coding assistant's reply into the reader's next steps.
-
-Return ONLY a JSON array, no prose, no code fence. Each item:
-{"kind": "pr"|"sql"|"command"|"file"|"deploy"|"review"|"check"|"action",
- "title": "imperative, max ~70 chars, e.g. 'Open a PR for branch feat/x'",
- "detail": "optional one short sentence of context",
- "copy": "optional EXACT text to paste: the full SQL, shell command, or snippet, copied verbatim from the reply",
- "language": "optional highlighter id for copy: sql, bash, ts, json ...",
- "path": "optional file path exactly as written in the reply; if the reply says the file is in a particular folder, give that folder joined with the path",
- "url": "optional URL exactly as written in the reply"}
-
-Rules:
-- Only steps the READER (a human) must do next, in the order they should do them. Skip work the assistant says it already did.
-- One action per item. Running a SQL migration file is kind "sql" with its path; pasting SQL is kind "sql" with copy.
-- Never invent SQL, commands, paths or URLs. Copy them character-for-character from the reply, or leave the field out.
-- At most 12 items. If the reply asks nothing of the reader, return [].`
-
-type Raw = Partial<Record<keyof Step, unknown>>
-
-const text = (v: unknown, max = 4000): string | undefined =>
-  typeof v === 'string' && v.trim() !== '' ? v.trim().slice(0, max) : undefined
-
-export function parseSteps(reply: string, stamp: number): Step[] {
-  const start = reply.indexOf('[')
-  const end = reply.lastIndexOf(']')
-  if (start < 0 || end <= start) return []
-  let raw: unknown
-  try {
-    raw = JSON.parse(reply.slice(start, end + 1))
-  } catch {
-    return []
-  }
-  if (!Array.isArray(raw)) return []
-
-  return raw
-    .filter((r): r is Raw => typeof r === 'object' && r !== null)
-    .map((r, i): Step | undefined => {
-      const title = text(r.title, 200)
-      if (title === undefined) return undefined
-      const kind = (typeof r.kind === 'string' && r.kind in KINDS ? r.kind : 'action') as StepKind
-      const url = text(r.url, 2000)
-
-      return {
-        id: `${stamp}-${i}`,
-        kind,
-        title,
-        detail: text(r.detail, 400),
-        copy: text(r.copy, 20000),
-        language: text(r.language, 20),
-        path: text(r.path, 500),
-        url: url !== undefined && /^https?:\/\//.test(url) ? url : undefined,
-      }
-    })
-    .filter((s): s is Step => s !== undefined)
-    .slice(0, 12)
-}
-
-export function parseRemote(remote: string): { owner: string; name: string } | undefined {
-  const m = /[/:]([^/:]+)\/([^/]+?)(?:\.git)?\/?$/.exec(remote.trim())
-
-  return m?.[1] && m[2] ? { owner: m[1], name: m[2] } : undefined
-}
-
-async function readRepo($: EngineInterface): Promise<{ repo: Repo | null; root: string }> {
-  const git = (args: string[]) =>
-    $.process.run(['git', ...args]).then(
-      r => (r.exitCode === 0 ? r.stdout.trim() : ''),
-      () => '',
-    )
-  const [remote, branch, root] = await Promise.all([
-    git(['remote', 'get-url', 'origin']),
-    git(['rev-parse', '--abbrev-ref', 'HEAD']),
-    git(['rev-parse', '--show-toplevel']),
-  ])
-  const gh = parseRemote(remote)
-
-  return {
-    repo: gh && branch !== '' ? { ...gh, branch } : null,
-    root: root || (await $.session.cwd()),
-  }
-}
-
-let repoRoot = ''
-
-const relative = (path: string) =>
-  repoRoot !== '' && path.startsWith(repoRoot + '/') ? path.slice(repoRoot.length + 1) : path.replace(/^\.\//, '')
-
-const blobHref = (r: Pick<Repo, 'owner' | 'name'>, branch: string, rel: string) =>
-  `https://github.com/${r.owner}/${r.name}/blob/${branch.split('/').map(encodeURIComponent).join('/')}/${rel.split('/').map(encodeURIComponent).join('/')}`
-
-/** file:// URL for a local path: `C:\a b\x` becomes `file:///C:/a%20b/x`, `/x` becomes `file:///x`. */
-export function localHref(abs: string): string {
-  const joined = slashes(abs)
-    .split('/')
-    .map((s, i) => (i === 0 && /^[A-Za-z]:$/.test(s) ? s : encodeURIComponent(s)))
-    .join('/')
-  return `file://${joined.startsWith('/') ? '' : '/'}${joined}`
-}
-
-function fileHref(r: Repo | null, path: string): string {
-  const rel = relative(path)
-  if (r) return blobHref(r, r.branch, rel)
-
-  return localHref(rel.startsWith('/') ? rel : `${repoRoot}/${rel}`)
-}
-
-// ── Which worktree/branch really holds a step's file ───────────────────────────
-// The session's own branch is often not where the work is: a task built in another git worktree leaves its files on
-// that worktree's branch, and a link to the session's branch is a GitHub 404. So each step's file is looked up once,
-// when the reply is read: an absolute path names its worktree outright; a relative one is looked for in the session's
-// worktree first, then in every other worktree of the same repository (newest commit touching it wins).
-
-export type Worktree = { root: string; branch: string }
-
-/** `git worktree list --porcelain` → worktrees with a branch (detached and bare ones are skipped). */
-export function parseWorktrees(porcelain: string): Worktree[] {
-  const out: Worktree[] = []
-  for (const block of porcelain.replace(/\r/g, '').split(/\n\n+/)) {
-    const root = /^worktree (.+)$/m.exec(block)?.[1]
-    const branch = /^branch refs\/heads\/(.+)$/m.exec(block)?.[1]
-    if (root && branch) out.push({ root: slashes(root), branch })
-  }
-  return out
-}
-
-/** Forward slashes, no trailing slash, no leading `./`. */
-export const slashes = (p: string) => p.trim().replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '')
-
-const isAbsolute = (p: string) => /^([A-Za-z]:)?\//.test(p)
-const sameStart = (path: string, root: string) => path.toLowerCase().startsWith(root.toLowerCase() + '/')
-
-/** The worktree an absolute path is inside (the deepest, as worktrees may nest) and the path relative to it. */
-export function worktreeOf(abs: string, worktrees: Worktree[]): { worktree: Worktree; rel: string } | undefined {
-  const hit = worktrees.filter(w => sameStart(abs, w.root)).sort((a, b) => b.root.length - a.root.length)[0]
-  return hit ? { worktree: hit, rel: abs.slice(hit.root.length + 1) } : undefined
-}
-
-async function locateFile($: EngineInterface, r: Repo | null, path: string): Promise<FileLink | undefined> {
-  const git = (cwd: string, args: string[]) =>
-    $.process.run(['git', ...args], { cwd, timeoutMs: 10000 }).then(
-      x => ({ ok: x.exitCode === 0, out: x.stdout.trim() }),
-      () => ({ ok: false, out: '' }),
-    )
-  const own = slashes(repoRoot)
-  const worktrees = parseWorktrees((await git(own, ['worktree', 'list', '--porcelain'])).out)
-  if (worktrees.length === 0) return undefined
-  const p = slashes(path)
-
-  let found: { worktree: Worktree; rel: string } | undefined
-  if (isAbsolute(p)) {
-    found = worktreeOf(p, worktrees)
-  } else {
-    const rel = relative(p)
-    const has = async (w: Worktree) => (await git(w.root, ['cat-file', '-e', `HEAD:${rel}`])).ok
-    const mine = worktrees.find(w => w.root.toLowerCase() === own.toLowerCase())
-    if (mine && (await has(mine))) found = { worktree: mine, rel }
-    else {
-      // All worktrees at once (a repository can have dozens); the newest commit touching the file wins.
-      const hits = await Promise.all(
-        worktrees.filter(w => w !== mine).map(async w => {
-          if (!(await has(w))) return undefined
-          const when = Number((await git(w.root, ['log', '-1', '--format=%ct', 'HEAD', '--', rel])).out) || 0
-          return { w, when }
-        }),
-      )
-      const best = hits.filter(h => h !== undefined).sort((a, b) => b.when - a.when)[0]
-      if (best) found = { worktree: best.w, rel }
-    }
-  }
-  if (!found) return undefined
-
-  const { worktree, rel } = found
-  const abs = `${worktree.root}/${rel}`
-  const elsewhere = worktree.root.toLowerCase() !== own.toLowerCase()
-  // GitHub only shows what was pushed: the branch's remote-tracking ref must exist and hold the file.
-  const pushed = r !== null && (await git(worktree.root, ['cat-file', '-e', `refs/remotes/origin/${worktree.branch}:${rel}`])).ok
-  return {
-    href: pushed && r ? blobHref(r, worktree.branch, rel) : localHref(abs),
-    label: rel,
-    branch: elsewhere || !pushed ? worktree.branch + (pushed ? '' : ', not on GitHub yet') : undefined,
-    copy: elsewhere ? abs : rel,
-  }
-}
-
-async function withFiles($: EngineInterface, found: Step[]): Promise<Step[]> {
-  const r = await read($, repo)
-  return Promise.all(
-    found.map(async step => {
-      if (!step.path) return step
-      const file = await locateFile($, r, step.path).catch(() => undefined)
-      return file ? { ...step, file } : step
-    }),
-  )
-}
-
-function prHref(r: Repo | null, step: Step): string | undefined {
-  if (step.url) return step.url
-  if (r && step.kind === 'pr' && /\b(open|create|raise|make)\b/i.test(step.title)) {
-    return `https://github.com/${r.owner}/${r.name}/compare/${r.branch}?expand=1`
-  }
-
-  return undefined
-}
-
-function clockTime(ms: number): string {
-  const d = new Date(ms)
-  const pad = (n: number) => String(n).padStart(2, '0')
-
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
-
-async function summarise($: EngineInterface, answer: string) {
-  await update($, status, (): StepsStatus => 'working')
-  const result = await $.model.complete({
-    model: 'haiku',
-    system: SYSTEM,
-    prompt: `The assistant's reply:\n\n<reply>\n${answer}\n</reply>`,
-    maxTokens: 4000,
-    timeoutMs: 60000,
-  })
-  if (!result.isAnswered) {
-    await update($, status, (): StepsStatus => 'error')
     return
   }
-  const stamp = await $.clock.now()
-  const found = await withFiles($, parseSteps(result.text, stamp))
-  if (found.length > 0) {
-    await update($, steps, () => found)
-    await update($, done, () => [])
-    await update($, updatedAt, () => stamp)
-    void $.ui.open({ id: PANE, title: 'Next steps' })
-    $.ui.toast(`${found.length} next step${found.length === 1 ? '' : 's'} ready`)
+  const hash = fnv(answer)
+  if (!force && hash === lastRead) return
+
+  busy = true
+  try {
+    await readInto($, answer, hash)
+  } finally {
+    busy = false
   }
-  await update($, status, (): StepsStatus => 'idle')
+  const next = queued
+  if (next !== undefined) {
+    queued = undefined
+    await refresh($, next.answer, next.force)
+  }
 }
 
-async function copyText($: EngineInterface, value: string, what: string, surface?: Parameters<EngineInterface['ui']['copy']>[0]['surface']) {
-  const r = await $.ui.copy({ text: value, surface })
+async function readInto($: EngineInterface, answer: string, hash: string): Promise<void> {
+  await update($, statusAtom, () => 'working')
+  await update($, errorAtom, () => null)
+
+  let out = await readReply($, answer, await read($, stepsAtom))
+  if (!out.ok && out.retry) {
+    await $.clock.sleep(RETRY_MS)
+    out = await readReply($, answer, await read($, stepsAtom))
+  }
+  if (!out.ok) {
+    await update($, statusAtom, () => 'error')
+    await update(
+      $,
+      errorAtom,
+      () => (out.ok ? null : out.why === 'model' ? "Couldn't reach the model to read Claude's reply." : "Couldn't make sense of the model's answer."),
+    )
+
+    return
+  }
+
+  const stamp = await $.clock.now()
+  const found = await withFiles(gitRunner($), await read($, rootAtom), await read($, repoAtom), out.extraction.steps)
+  const result: { v?: MergeResult } = {}
+  await commit($, list => (result.v = reconcile(list, found, out.extraction.resolved, stamp)).steps, stamp)
+  lastRead = hash
+  await update($, statusAtom, () => 'idle')
+
+  const fresh = (result.v?.added ?? []).filter(s => s.group === 'you' || s.group === 'decision').length
+  if (fresh > 0 && !(await read($, paneOpenAtom))) $.ui.toast(`${plural(fresh, 'new next step')}`)
+}
+
+/**
+ * Changes the list and keeps it: the session's copy first (which redraws whatever shows it), then the store and the
+ * status line. `change` must be pure, as the engine may run it again if another write lands first.
+ */
+async function commit($: EngineInterface, change: (list: Step[]) => Step[], stamp?: number): Promise<void> {
+  const now = await $.clock.now()
+  let kept: Step[] = []
+  await update($, stepsAtom, list => (kept = change(list)))
+  if (stamp !== undefined) await update($, updatedAtAtom, () => stamp)
+  await save($, await read($, rootAtom), kept, await read($, updatedAtAtom), now)
+  await syncStatus($)
+}
+
+/**
+ * Surfaces with no band above the prompt (the editor, the phone) get the same summary as a line of status.
+ * Where a terminal or the desktop app is attached the band does the job, so the line is cleared.
+ */
+async function syncStatus($: EngineInterface): Promise<void> {
+  const surfaces = await $.session.surfaces()
+  const hasBandSurface = surfaces.some(s => s === 'terminal' || s === 'desktop')
+  $.ui.status(!hasBandSurface && surfaces.length > 0 ? statusText(summarise(await read($, stepsAtom))) : undefined)
+}
+
+// ── What the buttons do ────────────────────────────────────────────────────────
+
+async function openPane($: EngineInterface, focus: boolean): Promise<void> {
+  const placed = await $.ui.open({ id: PANE, title: 'Next steps', rows: PANE_ROWS, closeOnEscape: true, ...(focus ? { focus: true as const } : {}) })
+  await update($, paneOpenAtom, () => placed.isPlaced)
+}
+
+async function mark($: EngineInterface, id: string, status: StepStatus): Promise<void> {
+  const now = await $.clock.now()
+  await commit($, list => setStatus(list, id, status, now))
+}
+
+async function copyText($: EngineInterface, value: string, what: string, press?: UiPressArgument): Promise<void> {
+  const r = await $.ui.copy({ text: value, surface: press?.surface })
   $.ui.toast(r.isCopied ? `Copied ${what}` : `Copy isn't available here: select the text in the box instead`)
+}
+
+/** Puts a ready-made reply in the prompt box for the reader to edit and send: nothing is ever sent for them. */
+async function handOff($: EngineInterface, step: Step, how: 'ask' | 'approve' | 'decline'): Promise<void> {
+  const text =
+    how === 'ask'
+      ? `Please go ahead with this next step: ${step.title}`
+      : `Decision on "${step.title}": ${how === 'approve' ? 'approved' : 'declined'}.`
+  const r = await $.prompt.fill({ text, mode: 'insert' })
+  $.ui.toast(r.isFilled ? 'Added to your prompt. Press Enter to send it.' : "Couldn't fill the prompt here")
+}
+
+async function rereadLastReply($: EngineInterface): Promise<boolean> {
+  const answer = await read($, lastAnswerAtom)
+  if (answer === '') return false
+  $.clock.after(0, () => void refresh($, answer, true))
+
+  return true
+}
+
+/** The lines `/next-steps list` prints: the same order and numbers as the panel. */
+function listing(list: Step[]): string {
+  const s = summarise(list)
+  const open = ordered(s)
+  if (open.length === 0) return 'No next steps.'
+  const who = (st: Step) => (st.group === 'claude' ? 'Claude' : st.group === 'decision' ? 'decision' : st.group === 'optional' ? 'optional' : 'you')
+  const lines = open.map((st, i) => `${i + 1}. [${who(st)}] ${st.title}${st.why ? `: ${st.why}` : ''}`)
+
+  return [`Next steps (${s.pending} pending${s.claude.length > 0 ? `, ${s.claude.length} for Claude` : ''}):`, ...lines].join('\n')
 }
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: COMMAND,
-      description: 'Show the next-steps checklist (args: refresh | clear)',
-      argumentHint: '[refresh|clear]',
+      description: 'Show the next-steps panel (args: refresh | clear | list | done [n] | help)',
+      argumentHint: '[refresh|clear|list|done [n]|help]',
     })
-    const found = await readRepo($)
-    repoRoot = found.root
-    await update($, repo, () => found.repo)
+    const found = await readRepo(gitRunner($), () => $.session.cwd())
+    await update($, repoAtom, () => found.repo)
+    await update($, rootAtom, () => found.root)
+
+    // A read that was under way when the code reloaded will never report back.
+    if ((await read($, statusAtom)) === 'working') await update($, statusAtom, () => 'idle')
+
+    // Pick up this worktree's list from the last session, unless this session already holds one (a reload).
+    const now = await $.clock.now()
+    if ((await read($, stepsAtom)).length === 0) {
+      const saved = await load($, found.root)
+      if (saved) {
+        await update($, stepsAtom, () => saved.steps)
+        await update($, updatedAtAtom, () => saved.updatedAt)
+        if (now - saved.touched > DAY_MS) await save($, found.root, saved.steps, saved.updatedAt, now)
+      }
+    }
+    await prune($, now)
+    await syncStatus($)
 
     return next(e)
+  })
+
+  on('session.attach', async ($, e, next) => {
+    const result = await next(e)
+    await syncStatus($)
+
+    return result
+  })
+
+  on('session.detach', async ($, e, next) => {
+    const result = await next(e)
+    await syncStatus($)
+
+    return result
   })
 
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
     if (e.agentId === undefined && e.reason === 'answer' && e.answer.length >= MIN_ANSWER) {
       const answer = e.answer
-      await update($, lastAnswer, () => answer)
-      $.clock.after(0, () => void summarise($, answer))
+      await update($, lastAnswerAtom, () => answer)
+      $.clock.after(0, () => void refresh($, answer, false))
     }
 
     return result
   })
 
+  on('ui.close', { id: PANE }, async ($, e, next) => {
+    const result = await next(e)
+    await update($, paneOpenAtom, () => false)
+
+    return result
+  })
+
   on('command.run', { command: COMMAND }, async ($, e) => {
-    const arg = e.args.trim().toLowerCase()
-    if (arg === 'clear') {
-      await update($, steps, () => [])
-      await update($, done, () => [])
+    const [verb = '', arg = ''] = e.args.trim().toLowerCase().split(/\s+/, 2)
+
+    if (verb === 'clear') {
+      await commit($, () => [])
+      await update($, selectedAtom, () => null)
+
       return { text: 'Next steps cleared.' }
     }
-    if (arg === 'refresh') {
-      const answer = await read($, lastAnswer)
-      if (answer === '') return { text: 'No reply to summarise yet.' }
-      $.clock.after(0, () => void summarise($, answer))
+    if (verb === 'list') return { text: listing(await read($, stepsAtom)) }
+    if (verb === 'help') {
+      return {
+        text: [
+          '/next-steps          open the panel',
+          '/next-steps list     print the open steps',
+          '/next-steps done [n] mark step n (default: the next one) done',
+          '/next-steps refresh  read Claude\'s last reply again',
+          '/next-steps clear    empty the list',
+        ].join('\n'),
+      }
     }
-    await $.ui.open({ id: PANE, title: 'Next steps' })
+    if (verb === 'done') {
+      const open = ordered(summarise(await read($, stepsAtom)))
+      const n = arg === '' ? 1 : Number(arg)
+      const step = Number.isInteger(n) ? open[n - 1] : undefined
+      if (step === undefined) return { text: open.length === 0 ? 'No next steps.' : `No step ${arg}. Try /next-steps list.` }
+      await mark($, step.id, 'done')
 
-    return { text: arg === 'refresh' ? 'Re-reading the last reply…' : 'Next steps opened.' }
+      return { text: `Done: ${step.title}` }
+    }
+    if (verb === 'refresh') {
+      if (!(await rereadLastReply($))) return { text: 'No reply to summarise yet.' }
+      await openPane($, true)
+
+      return { text: 'Re-reading the last reply…' }
+    }
+    await openPane($, true)
+
+    return { text: 'Next steps opened.' }
+  })
+
+  // The compact taskbar above the prompt (terminal and desktop). It gives way to a survey, and to the panel once open.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey) return next(e)
+    const summary = summarise(await read($, stepsAtom))
+    const status = await read($, statusAtom)
+    const isOpen = await read($, paneOpenAtom)
+    if (isOpen || !hasBand({ summary, status })) return next(e)
+
+    return taskbar(
+      $.ui.resolve(e),
+      { summary, status, width: e.props.bodyColumns },
+      {
+        open: () => openPane($, false),
+        done: step => mark($, step.id, 'done').then(() => $.ui.toast(`Done: ${clip(step.title, 50)}`)),
+        ask: step => handOff($, step, 'ask'),
+        retry: () => void rereadLastReply($),
+      },
+    )
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button, Link, Code } = $.ui.resolve(e)
-    const list = await read($, steps)
-    const ticked = await read($, done)
-    const state = await read($, status)
-    const when = await read($, updatedAt)
-    const r = await read($, repo)
-    const width = Math.max(30, (e.props.bodyColumns ?? e.viewport?.columns ?? 80) - 2)
-    const doneCount = list.filter(s => ticked.includes(s.id)).length
-    const nextUp = list.find(s => !ticked.includes(s.id))
+    const model = {
+      summary: summarise(await read($, stepsAtom)),
+      status: await read($, statusAtom),
+      error: await read($, errorAtom),
+      updatedAt: await read($, updatedAtAtom),
+      root: await read($, rootAtom),
+      repo: await read($, repoAtom),
+      selected: await read($, selectedAtom),
+      reveal: await read($, revealAtom),
+      width: Math.max(30, (e.props.bodyColumns ?? e.viewport?.columns ?? 80) - 2),
+      isFocused: e.props.isFocused,
+    }
 
-    const toggle = (id: string) =>
-      update($, done, ids => (ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id]))
-
-    return (
-      <Box flexDirection="column" width={width}>
-        <Box flexDirection="row" justifyContent="space-between">
-          <Text bold>
-            Next steps{' '}
-            {list.length > 0 && (
-              <Text dimColor>
-                {doneCount}/{list.length} done · {clockTime(when)}
-              </Text>
-            )}
-          </Text>
-          <Box flexDirection="row" gap={1}>
-            <Button
-              key="refresh"
-              label="Refresh"
-              onPress={async () => {
-                const answer = await read($, lastAnswer)
-                if (answer !== '') await summarise($, answer)
-              }}
-            />
-          </Box>
-        </Box>
-
-        {state === 'working' && <Text color="yellow">Reading Claude's reply…</Text>}
-        {state === 'error' && <Text color="red">Couldn't summarise that reply. Try /next-steps refresh.</Text>}
-
-        {list.length === 0 && state !== 'working' && (
-          <Text dimColor>No next steps yet. They appear here after Claude hands work back to you.</Text>
-        )}
-        {list.length > 0 && doneCount === list.length && <Text color="green">All done ✓</Text>}
-
-        {list.map((step, i) => {
-          const isDone = ticked.includes(step.id)
-          const isNext = step === nextUp
-          const kind = KINDS[step.kind]
-          const href = prHref(r, step)
-
-          return (
-            <Box key={step.id} flexDirection="column" marginTop={1}>
-              <Box flexDirection="row" gap={1}>
-                <Button key={`tick-${step.id}`} plain onPress={() => toggle(step.id)}>
-                  {isDone ? '[✓]' : '[ ]'}
-                </Button>
-                <Text bold={isNext} dimColor={isDone} strikethrough={isDone}>
-                  {i + 1}. <Text color={isDone ? undefined : kind.color} bold>{kind.label}</Text> {step.title}
-                  {isNext && <Text color="cyan"> ← next</Text>}
-                </Text>
-              </Box>
-
-              {!isDone && (
-                <Box flexDirection="column" paddingLeft={4}>
-                  {step.detail && <Text dimColor>{step.detail}</Text>}
-
-                  {href && (
-                    <Text>
-                      ↗ <Link href={href} label={href.replace(/^https?:\/\//, '')} />
-                    </Text>
-                  )}
-
-                  {step.path && (
-                    <Box flexDirection="row" gap={1}>
-                      <Text>
-                        📄 <Link href={step.file?.href ?? fileHref(r, step.path)} label={step.file?.label ?? relative(step.path)} />
-                        {step.file?.branch && <Text dimColor> ({step.file.branch})</Text>}
-                      </Text>
-                      <Button
-                        key={`path-${step.id}`}
-                        label="Copy path"
-                        onPress={press => copyText($, step.file?.copy ?? relative(step.path ?? ''), 'path', press.surface)}
-                      />
-                    </Box>
-                  )}
-
-                  {step.copy && (
-                    <Box flexDirection="column">
-                      <Box borderStyle="round" borderDimColor paddingX={1}>
-                        <Code
-                          source={step.copy}
-                          language={step.language ?? (step.kind === 'sql' ? 'sql' : step.kind === 'command' ? 'bash' : undefined)}
-                        />
-                      </Box>
-                      <Box flexDirection="row">
-                        <Button
-                          key={`copy-${step.id}`}
-                          label={step.kind === 'sql' ? 'Copy SQL' : step.kind === 'command' ? 'Copy command' : 'Copy'}
-                          variant="primary"
-                          onPress={press =>
-                            copyText($, step.copy ?? '', step.kind === 'sql' ? 'SQL' : 'text', press.surface)
-                          }
-                        />
-                      </Box>
-                    </Box>
-                  )}
-                </Box>
-              )}
-            </Box>
-          )
-        })}
-      </Box>
-    )
+    return panel($.ui.resolve(e), model, {
+      select: (id, isSelected) => update($, selectedAtom, () => (isSelected ? '' : id)).then(() => undefined),
+      setStatus: (id, status) => mark($, id, status),
+      copy: (value, what, press) => copyText($, value, what, press),
+      handOff: (step, how) => handOff($, step, how),
+      refresh: () => {
+        void rereadLastReply($).then(ok => {
+          if (!ok) $.ui.toast('No reply to read yet')
+        })
+      },
+      toggle: (section: keyof Reveal) => update($, revealAtom, r => ({ ...r, [section]: !r[section] })).then(() => undefined),
+    })
   })
 }
