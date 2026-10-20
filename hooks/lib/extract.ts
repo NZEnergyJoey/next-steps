@@ -97,11 +97,15 @@ export function token(v: unknown, max: number): string | undefined {
 const isHttp = (u: string) => /^https?:\/\/[^\s/]+/i.test(u)
 
 /** Whether `value` really stands in the reply (white space aside): the guard against invented code. */
-export const isGrounded = (reply: string, value: string) => squash(reply).includes(squash(value))
+/** Each line's own white space is ignored, but line breaks are not: a flattened one-liner is not the multi-line code. */
+const byLine = (s: string) => s.split(/\r?\n/).map(squash).filter(l => l !== '').join('\n')
+export const isGrounded = (reply: string, value: string) => byLine(reply).includes(byLine(value))
 
 /** A path is kept only when its file name is in the reply. */
 function pathIsGrounded(reply: string, path: string): boolean {
   const name = slashes(path).split('/').pop() ?? ''
+
+  if (slashes(path).split('/').includes('..')) return false
 
   return name !== '' && reply.toLowerCase().includes(name.toLowerCase())
 }

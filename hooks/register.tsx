@@ -62,7 +62,11 @@ async function refresh($: EngineInterface, answer: string, force: boolean): Prom
 
   busy = true
   try {
-    await readInto($, answer, hash)
+    await readInto($, answer, hash, force)
+  } catch {
+    // Whatever went wrong, the panel must not be left reading for ever.
+    await update($, statusAtom, () => 'error').catch(() => undefined)
+    await update($, errorAtom, () => "Something went wrong while reading Claude's reply.").catch(() => undefined)
   } finally {
     busy = false
   }
@@ -73,7 +77,7 @@ async function refresh($: EngineInterface, answer: string, force: boolean): Prom
   }
 }
 
-async function readInto($: EngineInterface, answer: string, hash: string): Promise<void> {
+async function readInto($: EngineInterface, answer: string, hash: string, force: boolean): Promise<void> {
   await update($, statusAtom, () => 'working')
   await update($, errorAtom, () => null)
 
@@ -96,7 +100,7 @@ async function readInto($: EngineInterface, answer: string, hash: string): Promi
   const stamp = await $.clock.now()
   const found = await withFiles(gitRunner($), await read($, rootAtom), await read($, repoAtom), out.extraction.steps)
   const result: { v?: MergeResult } = {}
-  await commit($, list => (result.v = reconcile(list, found, out.extraction.resolved, stamp)).steps, stamp)
+  await commit($, list => (result.v = reconcile(list, found, out.extraction.resolved, stamp, hash !== lastRead)).steps, stamp)
   lastRead = hash
   await update($, statusAtom, () => 'idle')
 
@@ -110,10 +114,10 @@ async function readInto($: EngineInterface, answer: string, hash: string): Promi
  */
 async function commit($: EngineInterface, change: (list: Step[]) => Step[], stamp?: number): Promise<void> {
   const now = await $.clock.now()
-  let kept: Step[] = []
-  await update($, stepsAtom, list => (kept = change(list)))
+  await update($, stepsAtom, change)
   if (stamp !== undefined) await update($, updatedAtAtom, () => stamp)
-  await save($, await read($, rootAtom), kept, await read($, updatedAtAtom), now)
+  // Saved from the list as it stands now, so a tick that landed meanwhile is never overwritten by an older copy.
+  await save($, await read($, rootAtom), await read($, stepsAtom), await read($, updatedAtAtom), now)
   await syncStatus($)
 }
 
@@ -186,6 +190,7 @@ export const register: Register = on => {
 
     // A read that was under way when the code reloaded will never report back.
     if ((await read($, statusAtom)) === 'working') await update($, statusAtom, () => 'idle')
+    await update($, paneOpenAtom, () => false) // a pane from before a reload or resume is gone; ui.render re-opens it on demand
 
     // Pick up this worktree's list from the last session, unless this session already holds one (a reload).
     const now = await $.clock.now()

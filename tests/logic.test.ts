@@ -87,12 +87,12 @@ describe('the safety rules for SQL, commands, paths and URLs', () => {
   test('code, paths and links must really be in the reply, or they are dropped', () => {
     const out = parseExtraction(
       JSON.stringify([
-        { title: 'real', copy: 'select 1;', path: 'supabase/migrations/0042_invoices.sql', url: 'https://github.com/acme/app/pull/12' },
+        { title: 'real', copy: 'select\n1;', path: 'supabase/migrations/0042_invoices.sql', url: 'https://github.com/acme/app/pull/12' },
         { title: 'invented', copy: 'drop table invoices;', path: 'supabase/migrations/9999_secret.sql', url: 'https://github.com/acme/app/pull/99' },
       ]),
       REPLY,
     )
-    expect(out?.steps[0]).toMatchObject({ copy: 'select 1;', path: 'supabase/migrations/0042_invoices.sql', url: 'https://github.com/acme/app/pull/12' })
+    expect(out?.steps[0]).toMatchObject({ copy: 'select\n1;', path: 'supabase/migrations/0042_invoices.sql', url: 'https://github.com/acme/app/pull/12' })
     expect(out?.steps[1]?.copy).toBeUndefined()
     expect(out?.steps[1]?.path).toBeUndefined()
     expect(out?.steps[1]?.url).toBeUndefined()
@@ -106,6 +106,16 @@ describe('the safety rules for SQL, commands, paths and URLs', () => {
 
   test('indentation and line breaks do not stop a real snippet from being recognised', () => {
     expect(parseExtraction(JSON.stringify([{ title: 't', copy: 'select\n  1;' }]), REPLY)?.steps[0]?.copy).toBe('select\n  1;')
+  })
+
+  test('line breaks matter: a flattened or re-joined version of the reply\'s code is not the code', () => {
+    const reply = '-- cleanup\nDROP TABLE x;'
+    expect(parseExtraction(JSON.stringify([{ title: 't', copy: '-- cleanup DROP TABLE x;' }]), reply)?.steps[0]?.copy).toBeUndefined()
+    expect(parseExtraction(JSON.stringify([{ title: 't', copy: '-- cleanup\n  DROP TABLE x;' }]), reply)?.steps[0]?.copy).toBe('-- cleanup\n  DROP TABLE x;')
+  })
+
+  test('a path that climbs out of the folder is left out even if its file name is in the reply', () => {
+    expect(parseExtraction(JSON.stringify([{ title: 't', path: '../../x/0042_invoices.sql' }]), 'see 0042_invoices.sql')?.steps[0]?.path).toBeUndefined()
   })
 
   test('code is never cut short: too long means left out', () => {
@@ -189,6 +199,13 @@ describe('merging a new reply into the list', () => {
     expect(old && isStale(old)).toBe(true)
     expect(summarise(list).earlier.map(s => s.title)).toEqual(['Run the migration'])
     expect(summarise(list).pending).toBe(STALE_AFTER)
+  })
+
+  test('reading the same reply again (Refresh) does not age the older steps', () => {
+    let list = reconcile([], [inc('Run the migration')], [], T0).steps
+    list = reconcile(list, [inc('Deploy the function')], [], T0 + MIN).steps
+    for (let i = 2; i < 8; i++) list = reconcile(list, [inc('Deploy the function')], [], T0 + i * MIN, false).steps
+    expect(list.find(s => s.title === 'Run the migration')?.missed).toBe(1)
   })
 
   test('a reply with no steps changes nothing and ages nothing', () => {

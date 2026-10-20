@@ -63,7 +63,7 @@ function nextId(list: Step[], stamp: number, i: number): string {
   return id
 }
 
-export function reconcile(existing: Step[], incoming: Incoming[], resolvedIds: string[], stamp: number): MergeResult {
+export function reconcile(existing: Step[], incoming: Incoming[], resolvedIds: string[], stamp: number, age = true): MergeResult {
   const list: Step[] = existing.map(s => ({ ...s }))
   const resolved: Step[] = []
   const added: Step[] = []
@@ -119,7 +119,8 @@ export function reconcile(existing: Step[], incoming: Incoming[], resolvedIds: s
   })
 
   // A reply that handed over steps and left an earlier one out has moved on from it a little.
-  if (incoming.length > 0) {
+  // (Reading the same reply again, as Refresh does, is not a further reply and ages nothing.)
+  if (age && incoming.length > 0) {
     for (const s of list) if (isOpen(s) && !taken.has(s.id)) s.missed += 1
   }
 
