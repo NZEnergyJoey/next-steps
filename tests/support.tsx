@@ -187,13 +187,32 @@ export const ALL_SURFACES = ['terminal', 'desktop', 'vscode', 'mobile'] as const
 export const buttonKeys = async (ui: { findAll: (q: { type: string }) => Promise<Array<{ key: string | undefined }>> }) =>
   (await ui.findAll({ type: 'Button' })).map(b => b.key ?? '')
 
-type Finder = { findAll: (q: { type: string }) => Promise<Array<{ key: string | undefined; props: Record<string, unknown> }>> }
-
-/** The button that opens the step whose title matches: it is named by the title and drawn as a chevron. */
-export async function stepButton(ui: Finder, title: RegExp) {
-  return (await ui.findAll({ type: 'Button' })).find(b => b.key?.startsWith('row-') === true && title.test(String(b.props.label ?? '')))
+type Drawn = { type?: string; props?: Record<string, unknown>; children?: Array<Drawn | string> }
+type Finder = {
+  drawn: () => Promise<unknown>
+  find: (q: { type: string; key: string }) => Promise<{ key: string | undefined; text: string; props: Record<string, unknown> } | undefined>
 }
 
+const textOf = (n: Drawn | string): string => (typeof n === 'string' ? n : (n.children ?? []).map(textOf).join(''))
+const ZERO_WIDTH = String.fromCharCode(0x200b)
+
+/**
+ * The button that opens the step whose title matches. Its Button carries no title (a desktop would draw it), so the
+ * step is found by its row (keyed `line-<id>`, or `spot-<id>` for the card) holding a Text with that title.
+ */
+export async function stepButton(ui: Finder, title: RegExp) {
+  let id: string | undefined
+  const walk = (n: Drawn | string, row: string | undefined) => {
+    if (typeof n === 'string' || id !== undefined) return
+    const key = String(n.props?.key ?? '')
+    const here = /^(line|spot)-/.test(key) ? key.replace(/^(line|spot)-/, '') : row
+    if (n.type === 'Text' && here !== undefined && title.test(textOf(n).split(ZERO_WIDTH).join(''))) id = here
+    for (const c of n.children ?? []) walk(c, here)
+  }
+  walk((await ui.drawn()) as Drawn, undefined)
+
+  return id === undefined ? undefined : ui.find({ type: 'Button', key: `row-${id}` })
+}
 /** The key of the row button for the step with this title. */
 export async function rowKey(ui: Finder, title: string) {
   return (await stepButton(ui, new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))))?.key ?? ''

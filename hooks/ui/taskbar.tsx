@@ -135,16 +135,16 @@ export function taskbar(E: ElementTable, m: BandModel, a: BandActions): RenderEl
           </Button>
         )}
         {step && roomy && isYours && !m.flash && (
-          <Button key="done" plain hotkey="d" label={`Mark done: ${step.title}`} onPress={() => a.done(step)}>
+          <Button key="done" plain hotkey="d" onPress={() => a.done(step)}>
             ✓ Done
           </Button>
         )}
         {step && roomy && !isYours && !m.flash && (
-          <Button key="ask" plain hotkey="a" label={`Ask Claude: ${step.title}`} onPress={() => a.ask(step)}>
+          <Button key="ask" plain hotkey="a" onPress={() => a.ask(step)}>
             Ask Claude
           </Button>
         )}
-        <Button key="open" plain hotkey="o" label="Open the next steps panel" onPress={() => a.open()}>
+        <Button key="open" plain hotkey="o" onPress={() => a.open()}>
           Open
         </Button>
       </Box>

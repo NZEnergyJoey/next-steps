@@ -76,6 +76,9 @@ function statusWord(s: Step): string {
   return toneOf(s) === 'earlier' ? 'not mentioned lately' : 'to do'
 }
 
+/** The panel's own surface on the desktop: a neutral grey at low alpha, a step off the chat in either theme. */
+const PANEL_FILL = 'rgba(127,127,127,0.09)'
+
 const copyLabel = (s: Step) => (s.kind === 'sql' ? 'Copy SQL' : s.kind === 'command' ? 'Copy command' : 'Copy')
 const copyWhat = (s: Step) => (s.kind === 'sql' ? 'SQL' : s.kind === 'command' ? 'command' : 'text')
 
@@ -131,7 +134,7 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
     const isClosed = s.status !== 'open'
 
     return (
-      <Button key={`tick-${s.id}`} plain label={isClosed ? 'Reopen' : 'Done'} onPress={() => a.setStatus(s.id, isClosed ? 'open' : 'done')}>
+      <Button key={`tick-${s.id}`} plain onPress={() => a.setStatus(s.id, isClosed ? 'open' : 'done')}>
         <Text color={TONES[tone].color} weight="semibold">
           {TONES[tone].glyph}
         </Text>
@@ -139,9 +142,12 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
     )
   }
 
-  /** Opens or folds a step. Named by the step's title; drawn as a chevron, so no title is ever held to one line. */
+  /**
+   * Opens or folds a step: a chevron, so no title is ever held to one line. No `label` on any Button that has
+   * children: a desktop draws the label in their place, and a long one would crowd the title out of its row.
+   */
   const disclose = (s: Step, isOpen: boolean) => (
-    <Button key={`row-${s.id}`} plain dimColor hotkey={hotkeyOf(s)} label={s.title} onPress={() => a.select(s.id, isOpen)}>
+    <Button key={`row-${s.id}`} plain dimColor hotkey={hotkeyOf(s)} onPress={() => a.select(s.id, isOpen)}>
       {isOpen ? '▾' : '▸'}
     </Button>
   )
@@ -225,7 +231,7 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
 
     return (
       <Box
-        key="spotlight"
+        key={`spot-${s.id}`}
         flexDirection="column"
         marginTop={rich ? 'sm' : 1}
         borderStyle="round"
@@ -290,7 +296,7 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
               </Text>
             )}
             {isAskable && (
-              <Button key={`ask-${s.id}`} plain dimColor label={`Ask Claude: ${s.title}`} onPress={() => a.handOff(s, 'ask')}>
+              <Button key={`ask-${s.id}`} plain dimColor onPress={() => a.handOff(s, 'ask')}>
                 Ask Claude
               </Button>
             )}
@@ -326,27 +332,29 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
       </Box>
     )
 
-  /** One tab: a dot and a count in its state's colour; the open one is filled, and tinted where it can be. */
+  /**
+   * One tab: a dot in its state's colour, then its name and count; the open one is filled, and tinted where it can
+   * be. The dot sits outside the Button, as a desktop draws a Button's words but not their colours.
+   */
   const tab = (t: (typeof TABS)[number]) => {
     const isOn = view === t.view
     const tone = TONES[t.tone]
-    const n = counts[t.view]
-    const press = (
-      <Button key={`tab-${t.view}`} plain hotkey={t.hotkey} dimColor={!isOn} label={`${t.label} · ${n}`} onPress={() => a.show(t.view)}>
-        <Text color={tone.color}>{isOn ? '●' : '○'}</Text>
-        {` ${t.label} `}
-        <Text dimColor={!isOn} weight={isOn ? 'semibold' : undefined}>
-          {String(n)}
-        </Text>
-      </Button>
-    )
 
-    return rich ? (
-      <Box key={`tabbox-${t.view}`} backgroundColor={isOn ? tone.tint : undefined} paddingX="xs" flexShrink={0}>
-        {press}
+    return (
+      <Box
+        key={`tabbox-${t.view}`}
+        flexDirection="row"
+        gap={1}
+        alignItems="center"
+        flexShrink={0}
+        backgroundColor={rich && isOn ? tone.tint : undefined}
+        paddingX={rich ? 'xs' : 0}
+      >
+        <Text color={tone.color}>{isOn ? '●' : '○'}</Text>
+        <Button key={`tab-${t.view}`} plain hotkey={t.hotkey} dimColor={!isOn} onPress={() => a.show(t.view)}>
+          {`${t.label} ${counts[t.view]}`}
+        </Button>
       </Box>
-    ) : (
-      press
     )
   }
   const tabs = TABS.filter(t => t.view === 'todo' || counts[t.view] > 0)
@@ -372,7 +380,16 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
     )
 
   return (
-    <Box flexDirection="column" width={rich ? '100%' : m.width} minWidth={0}>
+    // On the desktop the panel sits on a surface of its own, set apart from the chat by a soft neutral fill that
+    // reads on light and dark themes alike; the cards inside are tinted on top of it.
+    <Box
+      flexDirection="column"
+      width={rich ? '100%' : m.width}
+      minWidth={0}
+      backgroundColor={rich ? PANEL_FILL : undefined}
+      paddingX={rich ? 'md' : 0}
+      paddingY={rich ? 'sm' : 0}
+    >
       <Box flexDirection="row" alignItems="flex-start" gap={1}>
         <Box flexDirection="row" flexWrap="wrap" columnGap={1} alignItems="center" flexGrow={1} flexShrink={1} minWidth={0}>
           <Text wrap="wrap">
@@ -391,7 +408,7 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
           </Box>
         </Box>
         <Box flexShrink={0}>
-          <Button key="refresh" plain dimColor hotkey="r" label="Read Claude's last reply again" onPress={() => a.refresh()}>
+          <Button key="refresh" plain dimColor hotkey="r" onPress={() => a.refresh()}>
             {columns >= 40 ? '↻ Refresh' : '↻'}
           </Button>
         </Box>

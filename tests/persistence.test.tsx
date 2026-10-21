@@ -61,7 +61,7 @@ describe('keeping the list between sessions', () => {
       },
     })
     const ui = await $.ui.mount(pane('terminal'))
-    expect((await ui.find({ type: 'Button', key: 'tab-done' }))?.props.label).toContain('Done · 2')
+    expect((await ui.find({ type: 'Button', key: 'tab-done' }))?.text).toContain('Done 2')
     expect((await ui.find({ type: 'Text', text: /Next steps/ }))?.text).toContain('1 pending')
     await ui.unmount()
   })
@@ -153,7 +153,7 @@ describe('a new reply adds to the list; it does not replace it', () => {
     expect((await ui.find({ type: 'Text', text: /Next steps/ }))?.text).toContain('2 pending')
     expect(await stepButton(ui, /Open a PR for feat\/invoices/)).toBeDefined()
     expect(await stepButton(ui, /Update the staging env vars/)).toBeDefined()
-    expect((await ui.find({ type: 'Button', key: 'tab-done' }))?.props.label).toContain('Done · 1')
+    expect((await ui.find({ type: 'Button', key: 'tab-done' }))?.text).toContain('Done 1')
     await ui.press({ key: 'tab-done' })
     expect(await stepButton(ui, /Run the invoices migration/)).toBeDefined()
     await ui.unmount()
@@ -192,7 +192,7 @@ describe('a new reply adds to the list; it does not replace it', () => {
 
     const ui = await $.ui.mount(pane('terminal'))
     expect((await ui.find({ type: 'Text', text: /Next steps/ }))?.text).toContain('3 pending') // the three newer chores
-    expect((await ui.find({ type: 'Button', key: 'tab-earlier' }))?.props.label).toContain('Earlier · 1')
+    expect((await ui.find({ type: 'Button', key: 'tab-earlier' }))?.text).toContain('Earlier 1')
     await ui.unmount()
   })
 

@@ -107,6 +107,9 @@ function overflows(root: Node, rich: boolean): string[] {
       return
     }
     const here = `${path}/${n.type}${propsOf(n).key ? `[${String(propsOf(n).key)}]` : ''}`
+    // A desktop draws a Button's label in place of its children, so a Button never names itself apart from them.
+    const kids = (n.children ?? []).map(shownText).join('')
+    if (n.type === 'Button' && kids !== '' && propsOf(n).label !== undefined && propsOf(n).label !== kids) out.push(`${here}: a Button's label differs from what it shows; a desktop would draw the label`)
     if (n.type === 'Button' && shownText(n).length > 24) out.push(`${here}: a Button holds ${shownText(n).length} characters, and buttons do not wrap`)
     if (n.type === 'Box' && propsOf(n).flexDirection === 'row' && propsOf(n).flexWrap !== 'wrap') {
       for (const child of n.children ?? []) {
@@ -184,8 +187,8 @@ describe('layout at any width', () => {
       expect(pill?.props.backgroundColor).toBe(TONES[tone].tint)
     }
     expect(await ui.find({ type: 'Text', text: /^Now · step 1 of 3$/ })).toBeDefined()
-    expect((await ui.find({ type: 'Button', key: 'tab-todo' }))?.props.label).toBe('To do · 4')
-    expect((await ui.find({ type: 'Button', key: 'tab-optional' }))?.props.label).toBe('Optional · 1')
+    expect((await ui.find({ type: 'Button', key: 'tab-todo' }))?.text).toContain('To do 4')
+    expect((await ui.find({ type: 'Button', key: 'tab-optional' }))?.text).toContain('Optional 1')
     await ui.unmount()
   })
 })

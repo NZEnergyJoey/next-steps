@@ -157,7 +157,7 @@ describe('the highlight follows the work', () => {
     await ui.press({ key: 'done' })
     expect(await ui.find({ type: 'Text', text: /✓ Done · / })).toBeDefined()
     await ui.press({ key: 'tab-done' })
-    const tick = (await ui.findAll({ type: 'Button' })).find(b => b.key?.startsWith('tick-') && b.props.label === 'Reopen')
+    const tick = (await ui.findAll({ type: 'Button' })).find(b => b.key?.startsWith('tick-') && b.text === '✓')
     expect(tick).toBeDefined()
     await ui.press({ key: tick?.key ?? '' })
     expect(await ui.find({ type: 'Text', text: /✓ Done · / })).toBeUndefined()

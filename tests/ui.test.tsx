@@ -218,24 +218,24 @@ describe('the panel', () => {
   test('optional steps stay folded until asked for', async ($, on) => {
     await ready($, on)
     const ui = await $.ui.mount(pane('terminal'))
-    expect((await ui.find({ type: 'Button', key: 'tab-optional' }))?.props.label).toContain('Optional · 1')
+    expect((await ui.find({ type: 'Button', key: 'tab-optional' }))?.text).toContain('Optional 1')
     await ui.press({ key: 'tab-optional' })
     expect(await stepButton(ui, /Rename the helper/)).toBeDefined()
-    expect((await ui.find({ type: 'Button', key: 'tab-optional' }))?.text).toContain('●')
+    expect(await stepButton(ui, /Run the invoices migration/)).toBeUndefined() // To do's steps wait on their own tab
     await ui.unmount()
   })
 
   test('ticking a step closes it into Done; ticking it there brings it back', async ($, on) => {
     await ready($, on)
     const ui = await $.ui.mount(pane('terminal'))
-    expect((await ui.find({ type: 'Button', key: 'tick-1700000000000-0' }))?.props.label).toBe('Done')
+    expect((await ui.find({ type: 'Button', key: 'tick-1700000000000-0' }))?.text).not.toBe('✓')
     await ui.press({ key: 'tick-1700000000000-0' })
     expect((await ui.find({ type: 'Text', text: /Next steps/ }))?.text).toContain('2 pending')
-    expect((await ui.find({ type: 'Button', key: 'tab-done' }))?.props.label).toContain('Done · 1')
+    expect((await ui.find({ type: 'Button', key: 'tab-done' }))?.text).toContain('Done 1')
 
     await ui.press({ key: 'tab-done' })
     expect(await stepButton(ui, /Run the invoices migration/)).toBeDefined()
-    expect((await ui.find({ type: 'Button', key: 'tick-1700000000000-0' }))?.props.label).toBe('Reopen')
+    expect((await ui.find({ type: 'Button', key: 'tick-1700000000000-0' }))?.text).toBe('✓')
     await ui.press({ key: 'tick-1700000000000-0' })
     expect((await ui.find({ type: 'Text', text: /Next steps/ }))?.text).toContain('3 pending')
     await ui.unmount()
@@ -294,7 +294,7 @@ describe('the panel', () => {
     const ui = await $.ui.mount(pane('mobile', { bodyColumns: 24 }))
     // The step in the spotlight is never cut: its whole title wraps inside the card.
     const row = await stepButton(ui, /Ask the platform/)
-    expect(row?.props.label).toBe(long)
+    expect(row).toBeDefined()
     expect(await ui.find({ type: 'Text', text: long })).toBeDefined()
     await ui.unmount()
   })
