@@ -428,6 +428,10 @@ export const register: Register = on => {
       copy: (value, what, press) => copyText($, value, what, press),
       handOff: (step, how, option) => handOff($, step, how, option),
       askAll: steps => askAll($, steps),
+      skipAll: async ids => {
+        const now = await $.clock.now()
+        await commit($, list => ids.reduce((acc, id) => setStatus(acc, id, 'skipped', now), list))
+      },
       refresh: () => {
         void rereadLastReply($).then(ok => {
           if (!ok) $.ui.toast('No reply to read yet')

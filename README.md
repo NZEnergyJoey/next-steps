@@ -15,7 +15,7 @@ The ring fills as you work through the round. The step in front leads, wearing i
 **A panel** (`o`, the `open` button, or `/next-steps`):
 
 - Every step wears its state, in a colour, a glyph and a word, so it never rests on colour alone: ◐ **Now** (blue), ○ **Next** (purple), ◇ **Decide** (amber), ✦ **Claude** (orange), ◷ **Waiting** (grey), ◌ **Optional** (teal), ◌ **Earlier** (grey), ✓ **Done** (green), – **Skipped**. The bar above the prompt uses the same colours.
-- Coloured tabs along the top: **To do** (the step in front, then *Up next* and *Claude can do*), **Optional**, **Earlier** (not mentioned lately) and **Done**, each with its count.
+- Coloured tabs along the top: **To do** (the step in front, then *Up next* and *Claude can do*), **Optional**, **Earlier** (not mentioned lately, with **Skip all** to clear them out) and **Done**, each with its count.
 - The step in front sits in a card with why it matters, its link or file, and its SQL or command in a box with Copy; `▸` opens any other step the same way.
 - **One migration, several databases.** When a reply says to run something on HKL, then NZE/PAW, it is one step with a chip for each place: tick them off as you go (the chips in the panel, or `d` in the panel or on the bar, which reads `✓ NZE/PAW`), and the last tick closes the step. The bar says which place is next, and `/next-steps list` shows what is ticked.
 - **Steps that wait.** "Merge only after 97 is verified": the merge shows ◷ **Waiting** and *after 2*, never takes the spotlight while the migration is open, and moves up by itself once it is done.

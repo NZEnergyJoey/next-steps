@@ -390,3 +390,17 @@ describe('handing several steps back at once', () => {
     await ui.unmount()
   })
 })
+
+describe('clearing out what went quiet', () => {
+  test('Skip all in the Earlier tab sets every quiet step aside at once', async ($, on) => {
+    const other = (n: number) => answered(reading([{ group: 'you', kind: 'action', title: `Unrelated chore number ${n}` }]))
+    const world = await boot($, on, { model: [answered(reading([{ group: 'you', kind: 'sql', title: 'Run the old migration' }])), other(1), other(2), other(3)] })
+    for (const r of ['first', 'second', 'third', 'fourth']) await finishTurn($, world, reply(r))
+    const ui = await $.ui.mount(pane('terminal'))
+    await ui.press({ key: 'tab-earlier' })
+    await ui.press({ key: 'skip-all' })
+    expect(await ui.find({ type: 'Button', key: 'tab-earlier' })).toBeUndefined()
+    expect((await ui.find({ type: 'Button', key: 'tab-done' }))?.text).toContain('Done 1')
+    await ui.unmount()
+  })
+})

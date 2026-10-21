@@ -66,6 +66,8 @@ export type PanelActions = {
   handOff: (step: Step, how: HandOff, option?: string) => void
   /** Hands several steps back to Claude in one prompt. */
   askAll: (steps: Step[]) => void
+  /** Sets several steps aside at once (the Earlier tab's Skip all). */
+  skipAll: (ids: string[]) => void
   refresh: () => void
   show: (view: View) => void
 }
@@ -595,7 +597,13 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
       {view === 'optional' && section('Optional', sum.optional)}
       {view === 'earlier' && (
         <Box flexDirection="column">
-          {section('Earlier, not mentioned lately', sum.earlier)}
+          {section(
+            'Earlier, not mentioned lately',
+            sum.earlier,
+            <Button key="skip-all" plain dimColor onPress={() => a.skipAll(sum.earlier.map(s => s.id))}>
+              Skip all
+            </Button>,
+          )}
           <Text dimColor size="caption" wrap="wrap">
             The last few replies stopped mentioning these, so they no longer count. Tick them off or leave them.
           </Text>
