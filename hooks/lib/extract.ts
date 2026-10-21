@@ -58,6 +58,8 @@ export type Incoming = {
   targets?: string[]
   asksBack?: boolean
   options?: string[]
+  /** The place, in this reply's list (0-based), of a step that must be finished first. */
+  after?: number
   key: string
 }
 
@@ -224,6 +226,8 @@ export function parseExtraction(output: string, reply?: string): Extraction | un
       targets,
       asksBack: item.asksBack === true || undefined,
       options: options !== undefined && options.length >= 2 ? options : undefined,
+      // Only an earlier step of the same reply, counted from 1 as the model was asked to.
+      after: typeof item.after === 'number' && Number.isInteger(item.after) && item.after >= 1 && item.after <= steps.length ? item.after - 1 : undefined,
       key: '',
     }
     step.key = stepKey(step)
@@ -241,7 +245,7 @@ export function parseExtraction(output: string, reply?: string): Extraction | un
  * Kept so anything calling it still works; new code uses `parseExtraction`.
  */
 export function parseSteps(output: string, stamp: number, reply?: string): Step[] {
-  return (parseExtraction(output, reply)?.steps ?? []).map((s, i) => ({
+  return (parseExtraction(output, reply)?.steps ?? []).map(({ after: _after, ...s }, i) => ({
     ...s,
     id: `${stamp}-${i}`,
     status: 'open' as const,
@@ -301,6 +305,7 @@ export function reviveSteps(raw: unknown): Step[] {
       doneTargets: names(item.doneTargets, MAX_TARGETS, LIMIT.target),
       asksBack: item.asksBack === true || undefined,
       options: names(item.options, MAX_OPTIONS, LIMIT.option),
+      after: token(item.after, 64),
     } as const
     out.push({ ...base, key: stepKey(base) })
   }

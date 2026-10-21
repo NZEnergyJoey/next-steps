@@ -47,6 +47,8 @@ export type Step = {
   asksBack?: boolean
   /** For a decision: the answers the reply offers, a few words each. */
   options?: string[]
+  /** The id of a step that must be finished first ("merge only after 97 is verified"). */
+  after?: string
   /** What makes a later reply's step the same step: a hash of the code, else the URL, path or title words. */
   key: string
   firstSeen: number

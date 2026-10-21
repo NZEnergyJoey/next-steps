@@ -4,8 +4,8 @@ import type { Flash, Repo, Step, StepStatus, StepsStatus, View } from '../../typ
 import { fileHref, prHref, relativeTo } from '../lib/git'
 import { targetsLeft } from '../lib/merge'
 import { kindLabel, type Progress } from '../lib/progress'
-import { effectiveSelection, extras, lead, ordered, type Summary } from '../lib/select'
-import { breakable, clockTime } from '../lib/text'
+import { effectiveSelection, extras, lead, ordered, waitingOn, type Summary } from '../lib/select'
+import { breakable, clockTime, slashes } from '../lib/text'
 import { pulseSvg, railSvg } from './svg'
 import { TABS, TONES, toneOf, type Tone } from './tone'
 
@@ -120,6 +120,9 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
   const focus = effectiveSelection(m.selected, sum, rows)
   // Numbered as `/next-steps list` and `/next-steps done n` number them, in every tab; the digits 1-9 open them.
   const numberOf = new Map(ordered(sum).map((s, i) => [s.id, i + 1]))
+  // Every step the summary holds, to find what a step waits for.
+  const all = [...sum.todo, ...sum.claude, ...sum.optional, ...sum.earlier, ...sum.closed]
+  const blockerOf = (s: Step) => waitingOn(s, all)
   const hotkeyOf = (s: Step) => {
     const n = numberOf.get(s.id)
 
@@ -194,6 +197,11 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
 
     return (
       <Box flexDirection="column" gap={rich ? 'xs' : 0} minWidth={0}>
+        {blockerOf(s) && (
+          <Text color={TONES.waiting.color} size="footnote" wrap="wrap">
+            {`Waits for: ${shown(blockerOf(s)?.title ?? '')}`}
+          </Text>
+        )}
         {(!isSpot || s.group !== 'you' || !isOpen) && (
           <Text dimColor size="footnote" wrap="wrap">
             {WHO[s.group]} · {statusWord(s)}
@@ -284,7 +292,7 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
   /** The step in the spotlight: a card in its state's colour, the whole title and story inside. */
   const spotlight = (s: Step) => {
     const isOpenCard = focus === s.id
-    const tone = toneOf(s, true)
+    const tone = toneOf(s, true, blockerOf(s) !== undefined)
     const t = TONES[tone]
     const where = s.group === 'claude' ? 'Claude can do' : p.position > 0 ? `Now · step ${p.position} of ${p.total}` : 'Now'
 
@@ -339,7 +347,8 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
   const line = (s: Step) => {
     const isFocus = s.id === focus
     const isClosed = s.status !== 'open'
-    const tone = toneOf(s)
+    const blocker = blockerOf(s)
+    const tone = toneOf(s, false, blocker !== undefined)
     const isAskable = s.group === 'claude' && !isClosed && columns >= 48
     // The kind is worth a word only when it says something ("SQL", "PR"), never the catch-all "Action".
     const showKind = !isClosed && !isAskable && s.group !== 'decision' && s.kind !== 'action' && columns >= 56
@@ -350,11 +359,16 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
         <Box flexDirection="row" gap={1} alignItems="flex-start">
           {tick(s, tone)}
           <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
-            <Text color="text" weight={isFocus ? 'semibold' : 'regular'} dimColor={isClosed} strikethrough={s.status === 'done'} wrap="wrap">
+            <Text color="text" weight={isFocus ? 'semibold' : 'regular'} dimColor={isClosed || blocker !== undefined} strikethrough={s.status === 'done'} wrap="wrap">
               {shown(s.title)}
             </Text>
           </Box>
           <Box flexDirection="row" gap={1} alignItems="center" flexShrink={0}>
+            {blocker && numberOf.get(blocker.id) !== undefined && (
+              <Text dimColor size="caption" tabular>
+                {`after ${numberOf.get(blocker.id) ?? ''}`}
+              </Text>
+            )}
             {s.targets && !isClosed && (
               <Text dimColor size="caption" tabular>
                 {`${s.targets.length - targetsLeft(s).length}/${s.targets.length}`}
@@ -433,7 +447,9 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
   const hasAny = tabs.length > 1 || hasLive
   const summaryLine = [lead(sum), extras(sum)].filter(x => x !== '').join(' · ')
 
-  // ── The header: what it is, that it is live, and when it last heard from Claude ──
+  // ── The header: what it is, that it is live, when it last heard from Claude, and whose list it is ──
+  // The list belongs to one worktree; with many open at once, its branch (else its folder) says which.
+  const where = m.repo?.branch ?? slashes(m.root).split('/').pop() ?? ''
   const live =
     m.status === 'working' ? (
       <Text color="suggestion" size="caption">
@@ -444,8 +460,9 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
         Couldn't read the last reply
       </Text>
     ) : (
-      <Text dimColor size="caption">
+      <Text dimColor size="caption" wrap="truncate-end">
         Live{m.updatedAt > 0 && columns >= 44 ? ` · updated ${clockTime(m.updatedAt)}` : ''}
+        {where !== '' && columns >= 60 ? ` · ⎇ ${where}` : ''}
       </Text>
     )
 

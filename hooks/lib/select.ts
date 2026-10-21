@@ -7,6 +7,13 @@ import { plural } from './text'
 
 export const isStale = (s: Step) => s.status === 'open' && s.missed >= STALE_AFTER
 
+/** The open step this one waits for, if any: "merge only after the migration is verified". */
+export const waitingOn = (s: Step, steps: Step[]): Step | undefined =>
+  s.after === undefined ? undefined : steps.find(o => o.id === s.after && o.status === 'open' && o.id !== s.id)
+
+/** Steps that can be done now first, then those waiting on another, each in the order given. */
+const readyFirst = (list: Step[], steps: Step[]) => [...list.filter(s => !waitingOn(s, steps)), ...list.filter(s => waitingOn(s, steps))]
+
 export type Summary = {
   /** Open steps for the reader: their own actions and the decisions waiting on them, in the order to do them. */
   todo: Step[]
@@ -28,8 +35,9 @@ export type Summary = {
 
 export function summarise(steps: Step[]): Summary {
   const live = steps.filter(s => s.status === 'open' && !isStale(s))
-  const todo = live.filter(s => s.group === 'you' || s.group === 'decision')
-  const claude = live.filter(s => s.group === 'claude')
+  // A step waiting on another never leads: the spotlight is always something that can be done now.
+  const todo = readyFirst(live.filter(s => s.group === 'you' || s.group === 'decision'), steps)
+  const claude = readyFirst(live.filter(s => s.group === 'claude'), steps)
   const optional = live.filter(s => s.group === 'optional')
   const next = todo[0] ?? claude[0]
 

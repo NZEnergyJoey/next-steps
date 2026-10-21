@@ -2,12 +2,13 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Step } from '../types'
 import { parseExtraction, reviveSteps } from '../hooks/lib/extract'
-import { reconcile, setTarget, targetsLeft } from '../hooks/lib/merge'
+import { reconcile, setStatus, setTarget, targetsLeft } from '../hooks/lib/merge'
+import { summarise, waitingOn } from '../hooks/lib/select'
 import { answered, band, boot, finishTurn, pane, reading, reply, stepButton } from './support'
 
 /**
  * The workflows this mod is used for most: one migration run on several databases in turn (HKL, then NZE/PAW),
- * results pasted back to Claude, and decisions that offer their own answers.
+ * results pasted back to Claude, decisions that offer their own answers, and steps that must wait for another.
  */
 
 const T0 = 1_700_000_000_000
@@ -135,6 +136,41 @@ describe('in the panel and on the bar', () => {
     expect(await ui.find({ type: 'Button', key: 'approve' })).toBeUndefined()
     await ui.press({ key: 'option-1' })
     expect(world.calls.fills).toEqual(['Decision on "Choose whether rates may be backdated": Future-dated only.'])
+    await ui.unmount()
+  })
+})
+describe('steps that wait for another', () => {
+  test('a step may wait only for an earlier step of the same reply', () => {
+    const out = parseExtraction(JSON.stringify({ steps: [{ title: 'Apply 97' }, { title: 'Merge', after: 1 }, { title: 'Odd', after: 3 }, { title: 'Self', after: 0 }] }))
+    expect(out?.steps.map(s => s.after)).toEqual([undefined, 0, undefined, undefined])
+  })
+
+  test('it never leads while what it waits for is open, and takes its place once that is done', () => {
+    const incoming = [
+      { kind: 'pr' as const, group: 'you' as const, title: 'Merge PR 76', key: 't:76 merge pr', after: 1 },
+      { kind: 'sql' as const, group: 'you' as const, title: 'Apply migration 97', key: 't:97 apply migration' },
+    ]
+    const { steps } = reconcile([], incoming, [], T0)
+    const merge = steps.find(s => s.title === 'Merge PR 76')
+    const apply = steps.find(s => s.title === 'Apply migration 97')
+    expect(merge?.after).toBe(apply?.id)
+    expect(summarise(steps).next?.title).toBe('Apply migration 97') // listed second, but the merge waits for it
+    expect(waitingOn(merge!, steps)?.id).toBe(apply?.id)
+    const after = setStatus(steps, apply?.id ?? '', 'done', T0 + 1)
+    expect(summarise(after).next?.title).toBe('Merge PR 76')
+    expect(waitingOn(after.find(s => s.title === 'Merge PR 76')!, after)).toBeUndefined()
+  })
+
+  test('the panel greys a waiting step and says what it waits for', async ($, on) => {
+    const world = await boot($, on, {
+      model: [answered(reading([{ group: 'you', kind: 'sql', title: 'Apply migration 97' }, { group: 'you', kind: 'pr', title: 'Merge PR 76', after: 1 }]))],
+    })
+    await finishTurn($, world, reply('Apply migration 97, and only after it is verified, merge PR 76.'))
+    const ui = await $.ui.mount(pane('desktop'))
+    expect(await ui.find({ type: 'Text', text: /^after 1$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^ Waiting $/ })).toBeDefined()
+    await ui.press({ key: (await stepButton(ui, /^Merge PR 76$/))?.key ?? '' })
+    expect(await ui.find({ type: 'Text', text: /^Waits for: Apply migration 97$/ })).toBeDefined()
     await ui.unmount()
   })
 })

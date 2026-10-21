@@ -30,7 +30,8 @@ Each item of "steps":
  "url": "optional: URL exactly as written in the reply",
  "targets": "optional list: when the step must be done in more than one place, each place in order, named exactly as the reply writes it, e.g. the databases HKL then NZE/PAW, or staging then production",
  "asksBack": "optional: true when the reader must send something back afterwards (paste a query's results, say what they saw, answer a question)",
- "options": "optional list, decisions only: the 2 to 4 answers the reply offers, a few words each"}
+ "options": "optional list, decisions only: the 2 to 4 answers the reply offers, a few words each",
+ "after": "optional: the number (counting from 1, in this list) of an EARLIER step that must be finished first, only when the reply says to wait for it, e.g. merge only after the migration is verified"}
 
 Groups:
 - "you": only the reader can do it: run SQL in their database, deploy, merge, log in, supply a secret, check something in a browser.

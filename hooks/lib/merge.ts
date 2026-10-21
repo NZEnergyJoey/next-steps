@@ -68,6 +68,8 @@ export function reconcile(existing: Step[], incoming: Incoming[], resolvedIds: s
   const resolved: Step[] = []
   const added: Step[] = []
   const taken = new Set<string>()
+  /** Where each incoming step landed, so "after step 2" can name a real step once all have their places. */
+  const placed: Array<Step | undefined> = []
 
   for (const id of resolvedIds) {
     const s = list.find(x => x.id === id && isOpen(x))
@@ -84,6 +86,7 @@ export function reconcile(existing: Step[], incoming: Incoming[], resolvedIds: s
     const hit = findMatch(list, inc, taken, stamp)
     if (hit) {
       taken.add(hit.id)
+      placed[i] = hit
       hit.lastSeen = stamp
       if (hit.status !== 'open' && hit.closedBy !== 'reply') return // you closed it and have not been heard: it stays closed
       if (hit.status !== 'open') {
@@ -111,8 +114,9 @@ export function reconcile(existing: Step[], incoming: Incoming[], resolvedIds: s
 
       return
     }
+    const { after: _after, ...rest } = inc
     const step: Step = {
-      ...inc,
+      ...rest,
       id: nextId(list, stamp, i),
       status: 'open',
       firstSeen: stamp,
@@ -120,8 +124,17 @@ export function reconcile(existing: Step[], incoming: Incoming[], resolvedIds: s
       missed: 0,
     }
     taken.add(step.id)
+    placed[i] = step
     list.push(step)
     added.push(step)
+  })
+
+  // What each step waits for, as the reply now says it: an earlier step of the same reply, never itself.
+  incoming.forEach((inc, i) => {
+    const s = placed[i]
+    if (s === undefined || s.status !== 'open') return
+    const first = inc.after === undefined ? undefined : placed[inc.after]
+    s.after = first !== undefined && first.id !== s.id ? first.id : undefined
   })
 
   // A reply that handed over steps and left an earlier one out has moved on from it a little.
