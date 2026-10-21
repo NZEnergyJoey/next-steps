@@ -555,6 +555,7 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
           )}
           <Text dimColor size="caption" tabular wrap="wrap">
             {p.position > 0 ? `Step ${p.position} of ${p.total} · ${p.done} done` : `All ${p.total} done`}
+            {p.position > 0 && sum.todo[0]?.doneTargets ? ` · ${sum.todo[0].doneTargets.join(', ')} ✓` : ''}
           </Text>
         </Box>
       )}

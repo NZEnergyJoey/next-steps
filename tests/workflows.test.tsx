@@ -143,6 +143,7 @@ describe('in the panel and on the bar', () => {
 
     await ui.press({ key: 'target-1700000000000-0-0' })
     expect(await ui.find({ type: 'Text', text: /^1\/2$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^Step 1 of 3 · 0 done · HKL ✓$/ })).toBeDefined()
     expect((await bar.find({ type: 'Button', key: 'done' }))?.text).toBe('✓ NZE/PAW')
 
     expect((await ui.find({ type: 'Button', key: 'done' }))?.text).toBe('✓ NZE/PAW') // the panel's d ticks the next place too, as the bar's does
