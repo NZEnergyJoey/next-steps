@@ -83,6 +83,7 @@ const LONG = [
     options: ['Merge now and watch the three production deploys', 'Wait until the migration verifier has passed on every database'],
   },
   { group: 'you', kind: 'pr', title: 'Open a PR for feat/next-steps-redesign-with-coloured-status-tabs' },
+  { group: 'you', kind: 'deploy', title: 'Deploy the purchasing-notes edge function once the PR is merged', after: 3 },
   { group: 'claude', kind: 'check', title: 'Run the full test suite and the type-check across hooks, tests and types' },
   { group: 'optional', kind: 'action', title: 'Rename purchasingNotesBothInvoiceAndPurchaseOrderHelper to match the new table name' },
 ]
@@ -183,16 +184,16 @@ describe('layout at any width', () => {
     }
   })
 
-  test('every step wears its state: Now in the card, then Next, Decide and Claude in colour', async ($, on) => {
+  test('every step wears its state: Now in the card, then Next, Decide, Claude and Waiting in colour', async ($, on) => {
     await longList($, on)
     const ui = await $.ui.mount(pane('desktop', { bodyColumns: 100 }))
-    for (const tone of ['next', 'decide', 'claude'] as const) {
+    for (const tone of ['next', 'decide', 'claude', 'waiting'] as const) {
       const pill = await ui.find({ type: 'Text', text: new RegExp(`^ ${TONES[tone].label} $`) })
       expect(pill?.props.color).toBe(TONES[tone].color)
       expect(pill?.props.backgroundColor).toBe(TONES[tone].tint)
     }
-    expect(await ui.find({ type: 'Text', text: /^Now · step 1 of 3$/ })).toBeDefined()
-    expect((await ui.find({ type: 'Button', key: 'tab-todo' }))?.text).toContain('To do 4')
+    expect(await ui.find({ type: 'Text', text: /^Now · step 1 of 4$/ })).toBeDefined()
+    expect((await ui.find({ type: 'Button', key: 'tab-todo' }))?.text).toContain('To do 5')
     expect((await ui.find({ type: 'Button', key: 'tab-optional' }))?.text).toContain('Optional 1')
     await ui.unmount()
   })
