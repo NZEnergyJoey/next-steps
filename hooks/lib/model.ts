@@ -41,6 +41,7 @@ Groups:
 - "optional": a suggestion or nice-to-have that is not needed to finish the task.
 
 Rules:
+- When the reader's only part is to tell the assistant to go ahead ("tell me to rebase", "say the word and I'll rename it"), it is a "claude" step titled as the work itself ("Rebase PR #155"), with "after" when it must wait.
 - Not every suggestion is a task. When unsure between "you" and "optional", choose "optional". An offer such as "let me know if you want X" is "claude" or "optional", never "you".
 - Steps in the order they should be done. One action per step, but the same action in several places (one migration run on two databases) is ONE step with "targets". Running a SQL migration file is kind "sql" with its path; pasting SQL is kind "sql" with copy. At most 12 steps.
 - Skip work the assistant says it already did.
