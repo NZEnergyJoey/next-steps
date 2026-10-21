@@ -31,6 +31,16 @@ export function breakable(text: string, run = 18): string {
 
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
+/** How long ago, in the largest whole unit: "just now", "5m ago", "3h ago", "2d ago". */
+export function ago(now: number, then: number): string {
+  const m = Math.floor(Math.max(0, now - then) / 60_000)
+  if (m < 1) return 'just now'
+  if (m < 60) return `${m}m ago`
+  if (m < 48 * 60) return `${Math.floor(m / 60)}h ago`
+
+  return `${Math.floor(m / 1440)}d ago`
+}
+
 export function clockTime(ms: number): string {
   const d = new Date(ms)
   const pad = (n: number) => String(n).padStart(2, '0')

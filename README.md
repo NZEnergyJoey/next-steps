@@ -17,7 +17,7 @@ It shows how many steps wait on you, how many are Claude's or optional, and the 
 - Every step wears its state, in a colour, a glyph and a word, so it never rests on colour alone: ◐ **Now** (blue), ○ **Next** (purple), ◇ **Decide** (amber), ✦ **Claude** (orange), ◷ **Waiting** (grey), ◌ **Optional** (teal), ◌ **Earlier** (grey), ✓ **Done** (green), – **Skipped**. The bar above the prompt uses the same colours.
 - Coloured tabs along the top: **To do** (the step in front, then *Up next* and *Claude can do*), **Optional**, **Earlier** (not mentioned lately) and **Done**, each with its count.
 - The step in front sits in a card with why it matters, its link or file, and its SQL or command in a box with Copy; `▸` opens any other step the same way.
-- **One migration, several databases.** When a reply says to run something on HKL, then NZE/PAW, it is one step with a chip for each place: tick them off as you go (in the panel, or `d` on the bar, which reads `✓ NZE/PAW`), and the last tick closes the step. The bar says which place is next, and `/next-steps list` shows what is ticked.
+- **One migration, several databases.** When a reply says to run something on HKL, then NZE/PAW, it is one step with a chip for each place: tick them off as you go (the chips in the panel, or `d` in the panel or on the bar, which reads `✓ NZE/PAW`), and the last tick closes the step. The bar says which place is next, and `/next-steps list` shows what is ticked.
 - **Steps that wait.** "Merge only after 97 is verified": the merge shows ◷ **Waiting** and *after 2*, never takes the spotlight while the migration is open, and moves up by itself once it is done.
 - **Send result.** A step that wants its output back (a preflight query, what you saw) has `b` Send result, which starts that reply in the prompt for you to paste into.
 - **Decisions with answers.** When Claude offers choices, each is its own button (`y` the first, `n` the second); otherwise `y` approve / `n` decline. Either fills the prompt with your answer.
@@ -34,7 +34,7 @@ Keys: `1`-`9` open a step, `c` copy, `p` copy path, `d` done, `s` skip, `a` ask 
 - The list is saved per worktree (4 MiB store, 30 worktrees, 90 days) and is there when you come back.
 - Safety: SQL and commands are shown only if they appear in Claude's reply (indentation is ignored, line breaks are not), and are never shortened; code over 12,000 characters is left out rather than cut. A path must have its file name in the reply and may not climb out with `..`; links must appear in the reply and be http(s). Nothing is ever run or sent for you; hand-offs only fill the prompt for you to read and send.
 
-Commands: `/next-steps` (open), `list` (print), `done [n]`, `refresh`, `clear`, `help`.
+Commands: `/next-steps` (open), `list` (print), `all` (what is open in every worktree: each with what waits on you and which databases are still to go, newest first), `done [n]`, `refresh`, `clear`, `help`.
 
 Each long reply makes one small Haiku call (two if the first fails) to extract the steps; it is also sent the titles of your open steps so it can tell which a reply finished.
 

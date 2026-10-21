@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'claude-code/testing'
+import type { CommandRunInput } from 'claude-code'
 
 import type { Step } from '../types'
 import { parseExtraction, reviveSteps } from '../hooks/lib/extract'
 import { reconcile, setStatus, setTarget, targetsLeft } from '../hooks/lib/merge'
 import { summarise, waitingOn } from '../hooks/lib/select'
+import { scopeKey } from '../hooks/lib/store'
+import { everywhere } from '../hooks/register'
 import { answered, band, boot, finishTurn, pane, reading, reply, stepButton } from './support'
 
 /**
@@ -137,6 +140,7 @@ describe('in the panel and on the bar', () => {
     expect(await ui.find({ type: 'Text', text: /^1\/2$/ })).toBeDefined()
     expect((await bar.find({ type: 'Button', key: 'done' }))?.text).toBe('✓ NZE/PAW')
 
+    expect((await ui.find({ type: 'Button', key: 'done' }))?.text).toBe('✓ NZE/PAW done') // the panel's d ticks the next place too
     await bar.press({ key: 'done' })
     expect(await ui.find({ type: 'Text', text: /✓ Done · Run the read-only preflight/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^Now · step 2 of 3$/ })).toBeDefined()
@@ -198,5 +202,43 @@ describe('steps that wait for another', () => {
     await ui.press({ key: (await stepButton(ui, /^Merge PR 76$/))?.key ?? '' })
     expect(await ui.find({ type: 'Text', text: /^Waits for: Apply migration 97$/ })).toBeDefined()
     await ui.unmount()
+  })
+})
+
+describe('every worktree at once', () => {
+  test('lists each worktree with something open, newest first, with what waits on the reader', () => {
+    const text = everywhere(
+      [
+        { root: 'C:/Code/NZE-Worktrees/po-numbering', updatedAt: T0, steps: [step('a', { title: 'Apply migration 133', targets: ['HKL', 'NZE/PAW'], doneTargets: ['HKL'] }), step('b', { group: 'claude', title: 'Run the tests' })] },
+        { root: 'C:/Code/NZE-Worktrees/invoice-notes', updatedAt: T0 - 3 * 3600_000, steps: [step('c', { group: 'decision', title: 'Approve merging PR 154' })] },
+        { root: 'C:/Code/NZE-Worktrees/done-already', updatedAt: T0, steps: [step('d', { status: 'done', closedAt: T0 })] },
+      ],
+      'C:/Code/NZE-Worktrees/po-numbering',
+      T0 + 60_000,
+    )
+    expect(text.split('\n')).toEqual([
+      'Next steps in 2 worktrees: 2 waiting on you.',
+      '',
+      'po-numbering (this one) · 1 for you, 1 for Claude · updated 1m ago',
+      '  ○ Apply migration 133 (NZE/PAW to go)',
+      '',
+      'invoice-notes · 1 for you · updated 3h ago',
+      '  ◇ Approve merging PR 154',
+    ])
+    expect(everywhere([], 'x', T0)).toBe('Nothing is open in any worktree.')
+  })
+
+  test('/next-steps all reads this worktree live and the others from the store', async ($, on) => {
+    const other = 'C:/Code/NZE-Worktrees/invoice-notes'
+    const world = await boot($, on, {
+      model: [answered(reading(STEPS))],
+      store: { [scopeKey(other)]: { v: 1, root: other, updatedAt: T0, touched: T0, steps: [step('c', { group: 'decision', title: 'Approve merging PR 154' })] } },
+    })
+    await finishTurn($, world, REPLY)
+    const out = (await $.command.run({ command: 'next-steps', args: 'all', presentation: { isFullscreen: false, columns: 100 } } as unknown as CommandRunInput)) as { text?: string }
+    expect(out.text).toContain('Next steps in 2 worktrees: 4 waiting on you.')
+    expect(out.text).toContain('app (this one) · 3 for you')
+    expect(out.text).toContain('  ○ Run the read-only preflight (HKL, NZE/PAW to go)')
+    expect(out.text).toContain('invoice-notes · 1 for you')
   })
 })

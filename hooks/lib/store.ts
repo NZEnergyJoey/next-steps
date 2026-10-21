@@ -44,6 +44,24 @@ export async function load($: EngineInterface, root: string): Promise<Saved | un
   }
 }
 
+/** Every worktree's saved list, the most recently updated first: what `/next-steps all` reads. */
+export async function loadAll($: EngineInterface): Promise<Saved[]> {
+  try {
+    const keys = (await $.store.keys()).filter(k => k.startsWith(SCOPE_PREFIX))
+    const out: Saved[] = []
+    for (const key of keys) {
+      const raw = await $.store.get(key)
+      const named = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>).root : undefined
+      const record = revive(raw, typeof named === 'string' ? named : key.slice(SCOPE_PREFIX.length))
+      if (record) out.push(record)
+    }
+
+    return out.sort((a, b) => b.updatedAt - a.updatedAt)
+  } catch {
+    return []
+  }
+}
+
 let chain: Promise<unknown> = Promise.resolve()
 
 /** Writes one worktree's list. Writes go one after another so a slow one cannot land after a newer one. */

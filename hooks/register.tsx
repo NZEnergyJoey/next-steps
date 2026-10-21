@@ -8,8 +8,8 @@ import { reconcile, setStatus, setTarget, targetsLeft, type MergeResult } from '
 import { gitRunner, readRepo, withFiles } from './lib/git'
 import { ordered, statusText, summarise } from './lib/select'
 import { FLASH_MS, liveFlash, newSince, progressOf } from './lib/progress'
-import { DAY_MS, load, prune, save } from './lib/store'
-import { fnv } from './lib/text'
+import { DAY_MS, load, loadAll, prune, save } from './lib/store'
+import { ago, fnv, slashes } from './lib/text'
 import { taskbar, hasBand } from './ui/taskbar'
 import { panel, type HandOff } from './ui/panel'
 
@@ -214,12 +214,40 @@ function listing(list: Step[]): string {
   return [`Next steps (${s.pending} pending${s.claude.length > 0 ? `, ${s.claude.length} for Claude` : ''}):`, ...lines].join('\n')
 }
 
+/**
+ * What `/next-steps all` prints: every worktree with something open, newest first, with what waits on the reader in
+ * each. With many worktrees on the go, it is the one place to see which migrations and merges are still outstanding.
+ */
+export function everywhere(records: Array<{ root: string; steps: Step[]; updatedAt: number }>, here: string, now: number): string {
+  const lines: string[] = []
+  let waiting = 0
+  let places = 0
+  for (const r of records) {
+    const s = summarise(r.steps)
+    if (s.todo.length + s.claude.length === 0) continue
+    places += 1
+    waiting += s.todo.length
+    const name = slashes(r.root).split('/').pop() ?? r.root
+    const isHere = slashes(r.root).toLowerCase() === slashes(here).toLowerCase()
+    const counts = [`${s.todo.length} for you`, ...(s.claude.length > 0 ? [`${s.claude.length} for Claude`] : [])].join(', ')
+    lines.push('', `${name}${isHere ? ' (this one)' : ''} · ${counts} · updated ${ago(now, r.updatedAt)}`)
+    for (const st of s.todo) {
+      const left = targetsLeft(st)
+      const where = st.targets && left.length > 0 ? ` (${left.join(', ')} to go)` : ''
+      lines.push(`  ${st.group === 'decision' ? '◇' : '○'} ${st.title}${where}`)
+    }
+  }
+  if (places === 0) return 'Nothing is open in any worktree.'
+
+  return [`Next steps in ${places} worktree${places === 1 ? '' : 's'}: ${waiting} waiting on you.`, ...lines].join('\n')
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: COMMAND,
-      description: 'Show the next-steps panel (args: refresh | clear | list | done [n] | help)',
-      argumentHint: '[refresh|clear|list|done [n]|help]',
+      description: 'Show the next-steps panel (args: refresh | clear | list | all | done [n] | help)',
+      argumentHint: '[refresh|clear|list|all|done [n]|help]',
     })
     const found = await readRepo(gitRunner($), () => $.session.cwd())
     await update($, repoAtom, () => found.repo)
@@ -292,11 +320,20 @@ export const register: Register = on => {
       return { text: 'Next steps cleared.' }
     }
     if (verb === 'list') return { text: listing(await read($, stepsAtom)) }
+    if (verb === 'all') {
+      // This worktree's own list is read live; the others as last saved.
+      const root = await read($, rootAtom)
+      const here = { root, steps: await read($, stepsAtom), updatedAt: await read($, updatedAtAtom) }
+      const others = (await loadAll($)).filter(r => slashes(r.root).toLowerCase() !== slashes(root).toLowerCase())
+
+      return { text: everywhere([here, ...others], root, await $.clock.now()) }
+    }
     if (verb === 'help') {
       return {
         text: [
           '/next-steps          open the panel',
           '/next-steps list     print the open steps',
+          '/next-steps all      what is open in every worktree',
           '/next-steps done [n] mark step n (default: the next one) done',
           '/next-steps refresh  read Claude\'s last reply again',
           '/next-steps clear    empty the list',

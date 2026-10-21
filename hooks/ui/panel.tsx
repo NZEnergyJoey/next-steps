@@ -282,7 +282,10 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
             s.options?.map((o, i) => btn(`option-${i}`, i === 0 ? 'y' : i === 1 ? 'n' : undefined, o, () => a.handOff(s, 'option', o)))}
           {isOpen && s.group === 'decision' && !s.options && btn('approve', 'y', 'Approve', () => a.handOff(s, 'approve'))}
           {isOpen && s.group === 'decision' && !s.options && btn('decline', 'n', 'Decline', () => a.handOff(s, 'decline'))}
-          {btn('done', 'd', isOpen ? '✓ Mark done' : 'Reopen', () => a.setStatus(s.id, isOpen ? 'done' : 'open'))}
+          {/* With places to tick, Done ticks the next one, as it does on the bar; the last tick closes the step. */}
+          {isOpen && left.length > 0
+            ? btn('done', 'd', `✓ ${left[0]} done`, () => a.tickTarget(s.id, left[0] ?? '', true))
+            : btn('done', 'd', isOpen ? '✓ Mark done' : 'Reopen', () => a.setStatus(s.id, isOpen ? 'done' : 'open'))}
           {isOpen && btn('skip', 's', 'Skip', () => a.setStatus(s.id, 'skipped'), true)}
         </Box>
       </Box>
