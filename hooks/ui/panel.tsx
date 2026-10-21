@@ -367,9 +367,18 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
     const isClosed = s.status !== 'open'
     const blocker = blockerOf(s)
     const tone = toneOf(s, false, blocker !== undefined)
-    const isAskable = s.group === 'claude' && !isClosed && columns >= 48
+    // Room for the small facts and an Ask button beside the title; in a narrower panel they give way to the title.
+    const isRoomy = columns >= 72
+    const isAskable = s.group === 'claude' && !isClosed && isRoomy
     // The kind is worth a word only when it says something ("SQL", "PR"), never the catch-all "Action".
-    const showKind = !isClosed && !isAskable && s.group !== 'decision' && s.kind !== 'action' && columns >= 56
+    const showKind = !isClosed && !isAskable && s.group !== 'decision' && s.kind !== 'action' && isRoomy
+    // The small facts about a step: what it waits for, how many of its places are done, its kind. Beside the title
+    // where there is room; on a line of their own beneath it in a narrow panel, so the title keeps the width.
+    const facts = [
+      blocker && numberOf.get(blocker.id) !== undefined ? `after ${numberOf.get(blocker.id) ?? ''}` : undefined,
+      s.targets && !isClosed ? `${s.targets.length - targetsLeft(s).length}/${s.targets.length}` : undefined,
+      showKind ? kindLabel(s) : undefined,
+    ].filter((f): f is string => f !== undefined)
 
     return (
       // A row lights under the pointer, drawn by the surface itself with no round trip to the mod.
@@ -380,23 +389,19 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
             <Text color="text" weight={isFocus ? 'semibold' : 'regular'} dimColor={isClosed || blocker !== undefined} strikethrough={s.status === 'done'} wrap="wrap">
               {shown(s.title)}
             </Text>
+            {!isRoomy && facts.length > 0 && (
+              <Text dimColor size="caption" tabular wrap="wrap">
+                {facts.join(' · ')}
+              </Text>
+            )}
           </Box>
           <Box flexDirection="row" gap={1} alignItems="center" flexShrink={0}>
-            {blocker && numberOf.get(blocker.id) !== undefined && (
-              <Text dimColor size="caption" tabular>
-                {`after ${numberOf.get(blocker.id) ?? ''}`}
-              </Text>
-            )}
-            {s.targets && !isClosed && (
-              <Text dimColor size="caption" tabular>
-                {`${s.targets.length - targetsLeft(s).length}/${s.targets.length}`}
-              </Text>
-            )}
-            {showKind && (
-              <Text dimColor size="caption">
-                {kindLabel(s)}
-              </Text>
-            )}
+            {isRoomy &&
+              facts.map(f => (
+                <Text dimColor size="caption" tabular>
+                  {f}
+                </Text>
+              ))}
             {isAskable && (
               <Button key={`ask-${s.id}`} plain dimColor onPress={() => a.handOff(s, 'ask')}>
                 Ask Claude
