@@ -1,6 +1,6 @@
 {
   "name": "next-steps",
-  "version": "0.7.4",
+  "version": "0.7.5",
   "description": "Turns Claude's replies into a prioritised, tickable list of next steps (PRs, SQL, commands, files) with a compact taskbar, a detail panel, links, copy buttons and per-worktree memory.",
   "types": "./types/index.d.ts"
 }

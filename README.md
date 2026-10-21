@@ -31,14 +31,15 @@ Keys: `1`-`9` open a step, `c` copy, `p` copy path, `d` done, `s` skip, `a` ask 
 
 ## How it behaves
 
-- A new reply **adds to** the list. A step that comes round again is the same step; one you ticked stays ticked (if a reply asks for the same thing again more than 30 minutes later, it counts as a new occurrence, e.g. run the tests again); one Claude says it finished is closed for you; one nobody mentions for three replies moves to Earlier and stops counting.
+- A new reply **adds to** the list. A step that comes round again is the same step; one you ticked stays ticked (if a reply asks for the same thing again more than 30 minutes later, it counts as a new occurrence, e.g. run the tests again); one Claude says it finished is closed for you; one nobody mentions for three replies moves to Earlier and stops counting. A step said again in more words ("Merge PR #76 once both verifiers pass") is still the same step, and one part-way through its databases keeps its ticks when it is listed again for the ones left.
 - Reads are one at a time: if a reply lands while one is being read, the newest is read next, and a reply already read is not read again unless you press Refresh (Refresh does not age older steps). A failed read is retried once, then shown with a `r` Refresh; your list is never wiped by a failure.
+- Places come only from the reply ("HKL (project-id)" is read as HKL; "NZE/PAW" is one place), and only as a list of two or more. A step waits only for an earlier step of the same reply, and stops waiting once that one is done or has gone quiet (Earlier).
 - The list is saved per worktree (4 MiB store, 30 worktrees, 90 days) and is there when you come back.
 - Safety: SQL and commands are shown only if they appear in Claude's reply (indentation is ignored, line breaks are not), and are never shortened; code over 12,000 characters is left out rather than cut. A path must have its file name in the reply and may not climb out with `..`; links must appear in the reply and be http(s). Nothing is ever run or sent for you; hand-offs only fill the prompt for you to read and send.
 
-Commands: `/next-steps` (open), `list` (print), `all` (what is open in every worktree: each with what waits on you and which databases are still to go, newest first), `done [n]`, `refresh`, `clear`, `help`.
+Commands: `/next-steps` (open), `list` (print), `all` (what is open in every worktree: this one first, then the rest newest first, each with what waits on you and which databases are still to go), `done [n]`, `refresh`, `clear`, `help`.
 
-Each long reply makes one small Haiku call (two if the first fails) to extract the steps; it is also sent the titles of your open steps so it can tell which a reply finished.
+Each long reply makes one small Haiku call (two if the first fails) to extract the steps; it is also sent the titles of your open steps, and the places each still has to go, so it can tell which a reply finished, wholly or in one place.
 
 ## Develop
 

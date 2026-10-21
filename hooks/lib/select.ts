@@ -1,6 +1,6 @@
 import type { Step } from '../../types'
 
-import { STALE_AFTER } from './merge'
+import { STALE_AFTER, targetsLeft } from './merge'
 import { plural } from './text'
 
 /** Reading the list: what needs the reader, what comes next, what to say about it. Pure. */
@@ -110,5 +110,8 @@ export function extras(s: Summary): string {
  * Suggestions alone say nothing: they are never worth a permanent line.
  */
 export function statusText(s: Summary): string | undefined {
-  return s.next === undefined ? undefined : `Next steps · ${lead(s)} · ${s.next.title}`
+  if (s.next === undefined) return undefined
+  const place = targetsLeft(s.next)[0]
+
+  return `Next steps · ${lead(s)} · ${s.next.title}${place !== undefined ? ` (${place} next)` : ''}`
 }

@@ -9,7 +9,7 @@ import { contains } from '../hooks/lib/text'
 import { prHref } from '../hooks/lib/git'
 import { progressOf } from '../hooks/lib/progress'
 import { railSvg } from '../hooks/ui/svg'
-import { summarise, waitingOn } from '../hooks/lib/select'
+import { statusText, summarise, waitingOn } from '../hooks/lib/select'
 import { scopeKey } from '../hooks/lib/store'
 import { everywhere } from '../hooks/register'
 import { answered, band, boot, finishTurn, pane, reading, reply, stepButton } from './support'
@@ -356,5 +356,12 @@ describe('progress counts places', () => {
     const svg = railSvg(p)
     expect((svg.match(/<rect /g) ?? []).length).toBe(4) // track, shimmer and solid for the current step; one for the next
     expect((svg.match(/<animate /g) ?? []).length).toBe(1)
+  })
+})
+
+describe('the status line', () => {
+  test('names the next place where there is no bar to show it', () => {
+    const steps = [step('a', { title: 'Apply migration 105', targets: ['HKL', 'NZE/PAW'], doneTargets: ['HKL'] })]
+    expect(statusText(summarise(steps))).toBe('Next steps · 1 pending · Apply migration 105 (NZE/PAW next)')
   })
 })
