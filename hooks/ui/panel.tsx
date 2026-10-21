@@ -2,6 +2,7 @@ import type { ElementTable, RenderElement, RenderSurface, UiPressArgument } from
 
 import type { Flash, Repo, Step, StepStatus, StepsStatus, View } from '../../types'
 import { fileHref, prHref, relativeTo } from '../lib/git'
+import { targetsLeft } from '../lib/merge'
 import { kindLabel, type Progress } from '../lib/progress'
 import { effectiveSelection, extras, lead, ordered, type Summary } from '../lib/select'
 import { breakable, clockTime } from '../lib/text'
@@ -53,11 +54,16 @@ export type PanelModel = {
   surface: RenderSurface
 }
 
+/** What a press can put in the prompt for the reader to send: a request, a decision, or the start of a result. */
+export type HandOff = 'ask' | 'approve' | 'decline' | 'option' | 'result'
+
 export type PanelActions = {
   select: (id: string, isSelected: boolean) => void
   setStatus: (id: string, status: StepStatus) => void
+  /** Ticks or unticks one place a step must be done in. */
+  tickTarget: (id: string, target: string, isDone: boolean) => void
   copy: (value: string, what: string, press: UiPressArgument) => void
-  handOff: (step: Step, how: 'ask' | 'approve' | 'decline') => void
+  handOff: (step: Step, how: HandOff, option?: string) => void
   refresh: () => void
   show: (view: View) => void
 }
@@ -78,6 +84,8 @@ function statusWord(s: Step): string {
 
 /** The panel's own surface on the desktop: a neutral grey at low alpha, a step off the chat in either theme. */
 const PANEL_FILL = 'rgba(127,127,127,0.09)'
+/** A row under the pointer: one step darker than the panel's own fill. */
+const ROW_HOVER = 'rgba(127,127,127,0.12)'
 
 const copyLabel = (s: Step) => (s.kind === 'sql' ? 'Copy SQL' : s.kind === 'command' ? 'Copy command' : 'Copy')
 const copyWhat = (s: Step) => (s.kind === 'sql' ? 'SQL' : s.kind === 'command' ? 'command' : 'text')
@@ -158,8 +166,22 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
     const isOpen = s.status === 'open'
     const label = s.file?.label ?? (s.path ? relativeTo(m.root, s.path) : '')
     // The one action to take is the button that stands out; the rest stay quiet.
-    const primary: 'copy' | 'ask' | 'approve' | 'done' = !isOpen ? 'done' : s.group === 'decision' ? 'approve' : s.group === 'claude' ? 'ask' : s.copy ? 'copy' : 'done'
-    const btn = (key: string, hotkey: string, text: string, onPress: (press: UiPressArgument) => void, quiet = false) =>
+    const primary = !isOpen
+      ? 'done'
+      : s.group === 'decision'
+        ? s.options
+          ? 'option-0'
+          : 'approve'
+        : s.group === 'claude'
+          ? 'ask'
+          : s.copy
+            ? 'copy'
+            : s.asksBack
+              ? 'result'
+              : 'done'
+    const left = targetsLeft(s)
+    const placeWord = s.kind === 'sql' || s.kind === 'command' ? 'Run on' : s.kind === 'deploy' ? 'Deploy to' : 'In'
+    const btn = (key: string, hotkey: string | undefined, text: string, onPress: (press: UiPressArgument) => void, quiet = false) =>
       rich && isSpot ? (
         <Button key={key} hotkey={hotkey} variant={primary === key ? 'primary' : 'secondary'} dimColor={quiet} onPress={onPress}>
           {text}
@@ -210,11 +232,48 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
           </Box>
         )}
 
+        {s.targets && (
+          // Each place on its own: ticked green, the next one in blue, the rest waiting. The last tick closes the step.
+          <Box flexDirection="row" flexWrap="wrap" columnGap={rich ? 'sm' : 2} rowGap={rich ? 'xs' : 0} alignItems="center">
+            <Text dimColor size="footnote">
+              {placeWord}
+            </Text>
+            {s.targets.map((t, i) => {
+              const isTicked = !left.includes(t)
+              const isNext = isOpen && left[0] === t
+              const tone = TONES[isTicked ? 'done' : 'now']
+
+              return (
+                <Box
+                  key={`targetbox-${s.id}-${i}`}
+                  flexDirection="row"
+                  gap={1}
+                  alignItems="center"
+                  flexShrink={0}
+                  backgroundColor={rich && (isTicked || isNext) ? tone.tint : undefined}
+                  paddingX={rich ? 'xs' : 0}
+                >
+                  <Text color={isTicked || isNext ? tone.color : 'inactive'} weight="semibold">
+                    {isTicked ? '✓' : isNext ? '◐' : '○'}
+                  </Text>
+                  <Button key={`target-${s.id}-${i}`} plain dimColor={!isTicked && !isNext} onPress={() => a.tickTarget(s.id, t, !isTicked)}>
+                    {t}
+                  </Button>
+                </Box>
+              )
+            })}
+          </Box>
+        )}
+
         <Box flexDirection="row" gap={rich ? 'sm' : 2} flexWrap="wrap" marginTop={rich && isSpot ? 'xs' : 0}>
           {s.copy && btn('copy', 'c', copyLabel(s), press => a.copy(s.copy ?? '', copyWhat(s), press))}
+          {isOpen && s.asksBack && btn('result', 'b', 'Send result', () => a.handOff(s, 'result'))}
           {isOpen && s.group === 'claude' && btn('ask', 'a', 'Ask Claude', () => a.handOff(s, 'ask'))}
-          {isOpen && s.group === 'decision' && btn('approve', 'y', 'Approve', () => a.handOff(s, 'approve'))}
-          {isOpen && s.group === 'decision' && btn('decline', 'n', 'Decline', () => a.handOff(s, 'decline'))}
+          {isOpen &&
+            s.group === 'decision' &&
+            s.options?.map((o, i) => btn(`option-${i}`, i === 0 ? 'y' : i === 1 ? 'n' : undefined, o, () => a.handOff(s, 'option', o)))}
+          {isOpen && s.group === 'decision' && !s.options && btn('approve', 'y', 'Approve', () => a.handOff(s, 'approve'))}
+          {isOpen && s.group === 'decision' && !s.options && btn('decline', 'n', 'Decline', () => a.handOff(s, 'decline'))}
           {btn('done', 'd', isOpen ? '✓ Mark done' : 'Reopen', () => a.setStatus(s.id, isOpen ? 'done' : 'open'))}
           {isOpen && btn('skip', 's', 'Skip', () => a.setStatus(s.id, 'skipped'), true)}
         </Box>
@@ -250,6 +309,11 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
             </Text>
           </Box>
           <Box flexDirection="row" gap={1} alignItems="center" flexShrink={0}>
+            {s.targets && (
+              <Text dimColor size="caption" tabular>
+                {`${s.targets.length - targetsLeft(s).length}/${s.targets.length}`}
+              </Text>
+            )}
             {s.group === 'decision' ? pill('decide') : columns >= 30 && s.kind !== 'action' && <Text dimColor size="caption">{kindLabel(s)}</Text>}
             {disclose(s, isOpenCard)}
           </Box>
@@ -281,7 +345,8 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
     const showKind = !isClosed && !isAskable && s.group !== 'decision' && s.kind !== 'action' && columns >= 56
 
     return (
-      <Box key={`line-${s.id}`} flexDirection="column" marginTop={rich ? 'xs' : 0}>
+      // A row lights under the pointer, drawn by the surface itself with no round trip to the mod.
+      <Box key={`line-${s.id}`} flexDirection="column" marginTop={rich ? 'xs' : 0} hover={rich ? { backgroundColor: ROW_HOVER } : undefined}>
         <Box flexDirection="row" gap={1} alignItems="flex-start">
           {tick(s, tone)}
           <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
@@ -290,6 +355,11 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
             </Text>
           </Box>
           <Box flexDirection="row" gap={1} alignItems="center" flexShrink={0}>
+            {s.targets && !isClosed && (
+              <Text dimColor size="caption" tabular>
+                {`${s.targets.length - targetsLeft(s).length}/${s.targets.length}`}
+              </Text>
+            )}
             {showKind && (
               <Text dimColor size="caption">
                 {kindLabel(s)}

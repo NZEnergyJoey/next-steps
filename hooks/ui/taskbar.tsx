@@ -5,6 +5,7 @@ import type { Progress } from '../lib/progress'
 import { extras, lead, type Summary } from '../lib/select'
 import { ringSvg } from './svg'
 import { TONES, toneOf } from './tone'
+import { targetsLeft } from '../lib/merge'
 
 /**
  * The bar: one quiet row above the prompt that always answers "what now?".
@@ -35,6 +36,8 @@ export type BandModel = {
 export type BandActions = {
   open: () => void
   done: (step: Step) => void
+  /** Ticks off one place a step must be done in. */
+  tickTarget: (step: Step, target: string) => void
   ask: (step: Step) => void
   retry: () => void
 }
@@ -70,6 +73,8 @@ export function taskbar(E: ElementTable, m: BandModel, a: BandActions): RenderEl
   const more = tier === 'wide' ? extras(s) : ''
   const glyphColour = isError ? 'error' : m.flash ? 'success' : s.attention === 'you' ? 'suggestion' : s.attention === 'claude' ? 'claude' : 'inactive'
   const tone = step === undefined ? undefined : TONES[step.group === 'decision' ? 'decide' : toneOf(step, true)]
+  // A step to run in several places says which one is next: "Run migration 97 · NZE/PAW next".
+  const nextPlace = step === undefined ? undefined : targetsLeft(step)[0]
 
   return (
     <Box flexDirection="row" width={Svg ? '100%' : m.width} gap={2} alignItems="center">
@@ -107,6 +112,7 @@ export function taskbar(E: ElementTable, m: BandModel, a: BandActions): RenderEl
                 <Text weight="semibold" color="text">
                   {step.title}
                 </Text>
+                {nextPlace !== undefined && !roomy && tier !== 'tiny' && <Text color={TONES.now.color}>{` · ${nextPlace} next`}</Text>}
               </Text>
             )
           )}
@@ -135,8 +141,9 @@ export function taskbar(E: ElementTable, m: BandModel, a: BandActions): RenderEl
           </Button>
         )}
         {step && roomy && isYours && !m.flash && (
-          <Button key="done" plain hotkey="d" onPress={() => a.done(step)}>
-            ✓ Done
+          // A step to run in several places ticks off the next place, not the whole step.
+          <Button key="done" plain hotkey="d" onPress={() => (nextPlace !== undefined ? a.tickTarget(step, nextPlace) : a.done(step))}>
+            {nextPlace !== undefined ? `✓ ${nextPlace}` : '✓ Done'}
           </Button>
         )}
         {step && roomy && !isYours && !m.flash && (

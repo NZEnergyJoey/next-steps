@@ -27,7 +27,10 @@ Each item of "steps":
  "copy": "optional: the EXACT text to paste (the full SQL, shell command or snippet), copied verbatim from the reply",
  "language": "optional: highlighter id for copy: sql, bash, ts, json ...",
  "path": "optional: file path exactly as written in the reply; if the reply says the file is in a particular folder, give that folder joined with the path",
- "url": "optional: URL exactly as written in the reply"}
+ "url": "optional: URL exactly as written in the reply",
+ "targets": "optional list: when the step must be done in more than one place, each place in order, named exactly as the reply writes it, e.g. the databases HKL then NZE/PAW, or staging then production",
+ "asksBack": "optional: true when the reader must send something back afterwards (paste a query's results, say what they saw, answer a question)",
+ "options": "optional list, decisions only: the 2 to 4 answers the reply offers, a few words each"}
 
 Groups:
 - "you": only the reader can do it: run SQL in their database, deploy, merge, log in, supply a secret, check something in a browser.
@@ -37,7 +40,7 @@ Groups:
 
 Rules:
 - Not every suggestion is a task. When unsure between "you" and "optional", choose "optional". An offer such as "let me know if you want X" is "claude" or "optional", never "you".
-- Steps in the order they should be done. One action per step. Running a SQL migration file is kind "sql" with its path; pasting SQL is kind "sql" with copy. At most 12 steps.
+- Steps in the order they should be done. One action per step, but the same action in several places (one migration run on two databases) is ONE step with "targets". Running a SQL migration file is kind "sql" with its path; pasting SQL is kind "sql" with copy. At most 12 steps.
 - Skip work the assistant says it already did.
 - Never invent SQL, commands, paths or URLs. Copy them character-for-character from the reply, or leave the field out.
 - "resolved": ids from the open list that the reply clearly says are now done, by the assistant or because the reader reported it. Leave it [] when unsure. Never give an id that is not in the open list.

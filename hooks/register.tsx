@@ -4,14 +4,14 @@ import type { EngineInterface, Register, UiPressArgument } from 'claude-code'
 import type { Flash, Step, StepStatus, View } from '../types'
 
 import { MIN_ANSWER, readReply } from './lib/model'
-import { reconcile, setStatus, type MergeResult } from './lib/merge'
+import { reconcile, setStatus, setTarget, targetsLeft, type MergeResult } from './lib/merge'
 import { gitRunner, readRepo, withFiles } from './lib/git'
 import { ordered, statusText, summarise } from './lib/select'
 import { FLASH_MS, liveFlash, newSince, progressOf } from './lib/progress'
 import { DAY_MS, load, prune, save } from './lib/store'
 import { fnv } from './lib/text'
 import { taskbar, hasBand } from './ui/taskbar'
-import { panel } from './ui/panel'
+import { panel, type HandOff } from './ui/panel'
 
 // Names other code (and the tests) have always been able to import from here.
 export { parseSteps, parseExtraction } from './lib/extract'
@@ -163,19 +163,35 @@ async function mark($: EngineInterface, id: string, status: StepStatus): Promise
   if (status === 'open') await update($, flashAtom, f => (f?.id === id ? null : f))
 }
 
+/** Ticks one place a step must be done in; the last one ticked closes the step, which lingers its moment like any. */
+async function tickTarget($: EngineInterface, id: string, target: string, isDone: boolean): Promise<void> {
+  const now = await $.clock.now()
+  const before = (await read($, stepsAtom)).find(s => s.id === id)
+  await commit($, list => setTarget(list, id, target, isDone, now))
+  const after = (await read($, stepsAtom)).find(s => s.id === id)
+  if (before?.status === 'open' && after?.status === 'done') await flash($, after, 'you')
+  if (before?.status === 'done' && after?.status === 'open') await update($, flashAtom, f => (f?.id === id ? null : f))
+}
+
 async function copyText($: EngineInterface, value: string, what: string, press?: UiPressArgument): Promise<void> {
   const r = await $.ui.copy({ text: value, surface: press?.surface })
   $.ui.toast(r.isCopied ? `Copied ${what}` : `Copy isn't available here: select the text in the box instead`)
 }
 
 /** Puts a ready-made reply in the prompt box for the reader to edit and send: nothing is ever sent for them. */
-async function handOff($: EngineInterface, step: Step, how: 'ask' | 'approve' | 'decline'): Promise<void> {
+async function handOff($: EngineInterface, step: Step, how: HandOff, option?: string): Promise<void> {
   const text =
     how === 'ask'
       ? `Please go ahead with this next step: ${step.title}`
-      : `Decision on "${step.title}": ${how === 'approve' ? 'approved' : 'declined'}.`
+      : how === 'result'
+        ? `Result of "${step.title}": `
+        : how === 'option'
+          ? `Decision on "${step.title}": ${option ?? ''}.`
+          : `Decision on "${step.title}": ${how === 'approve' ? 'approved' : 'declined'}.`
   const r = await $.prompt.fill({ text, mode: 'insert' })
-  $.ui.toast(r.isFilled ? 'Added to your prompt. Press Enter to send it.' : "Couldn't fill the prompt here")
+  $.ui.toast(
+    !r.isFilled ? "Couldn't fill the prompt here" : how === 'result' ? 'Paste the result after it, then press Enter.' : 'Added to your prompt. Press Enter to send it.',
+  )
 }
 
 async function rereadLastReply($: EngineInterface): Promise<boolean> {
@@ -192,7 +208,8 @@ function listing(list: Step[]): string {
   const open = ordered(s)
   if (open.length === 0) return 'No next steps.'
   const who = (st: Step) => (st.group === 'claude' ? 'Claude' : st.group === 'decision' ? 'decision' : st.group === 'optional' ? 'optional' : 'you')
-  const lines = open.map((st, i) => `${i + 1}. [${who(st)}] ${st.title}${st.why ? `: ${st.why}` : ''}`)
+  const where = (st: Step) => (st.targets ? ` (on ${st.targets.map(t => (targetsLeft(st).includes(t) ? t : `${t} ✓`)).join(', ')})` : '')
+  const lines = open.map((st, i) => `${i + 1}. [${who(st)}] ${st.title}${where(st)}${st.why ? `: ${st.why}` : ''}`)
 
   return [`Next steps (${s.pending} pending${s.claude.length > 0 ? `, ${s.claude.length} for Claude` : ''}):`, ...lines].join('\n')
 }
@@ -331,6 +348,7 @@ export const register: Register = on => {
       {
         open: () => openPane($, false),
         done: step => mark($, step.id, 'done'),
+        tickTarget: (step, target) => tickTarget($, step.id, target, true),
         ask: step => handOff($, step, 'ask'),
         retry: () => void rereadLastReply($),
       },
@@ -360,8 +378,9 @@ export const register: Register = on => {
     return panel($.ui.resolve(e), model, {
       select: (id, isSelected) => update($, selectedAtom, () => (isSelected ? '' : id)).then(() => undefined),
       setStatus: (id, status) => mark($, id, status),
+      tickTarget: (id, target, isDone) => tickTarget($, id, target, isDone),
       copy: (value, what, press) => copyText($, value, what, press),
-      handOff: (step, how) => handOff($, step, how),
+      handOff: (step, how, option) => handOff($, step, how, option),
       refresh: () => {
         void rereadLastReply($).then(ok => {
           if (!ok) $.ui.toast('No reply to read yet')

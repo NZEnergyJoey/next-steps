@@ -102,6 +102,12 @@ export function reconcile(existing: Step[], incoming: Incoming[], resolvedIds: s
       hit.url = inc.url
       hit.file = inc.file
       hit.key = inc.key
+      // The places already ticked stay ticked, as long as the reply still names them.
+      const kept = (hit.doneTargets ?? []).filter(t => inc.targets?.some(n => n.toLowerCase() === t.toLowerCase()))
+      hit.targets = inc.targets
+      hit.doneTargets = kept.length > 0 ? kept : undefined
+      hit.asksBack = inc.asksBack
+      hit.options = inc.options
 
       return
     }
@@ -149,6 +155,27 @@ export function prune(list: Step[]): Step[] {
 }
 
 /** Marks a step done, skipped, or open again; the one place a reader's tick is turned into a change. */
+/** The targets of a step not yet ticked, in order. */
+export const targetsLeft = (s: Pick<Step, 'targets' | 'doneTargets'>): string[] =>
+  (s.targets ?? []).filter(t => !(s.doneTargets ?? []).some(d => d.toLowerCase() === t.toLowerCase()))
+
+/**
+ * Ticks one target of a step (a database it must run on), or unticks it. With every target ticked the step is done;
+ * unticking one of a done step opens it again.
+ */
+export function setTarget(list: Step[], id: string, target: string, isDone: boolean, stamp: number): Step[] {
+  return list.map(s => {
+    if (s.id !== id || !(s.targets ?? []).includes(target)) return s
+    const others = (s.doneTargets ?? []).filter(d => d !== target)
+    const doneTargets = isDone ? (s.targets ?? []).filter(t => t === target || others.includes(t)) : others
+    const next: Step = { ...s, doneTargets: doneTargets.length > 0 ? doneTargets : undefined }
+    if (targetsLeft(next).length === 0) return { ...next, status: 'done', closedAt: stamp, closedBy: 'you' }
+    if (s.status !== 'open') return { ...next, status: 'open', missed: 0, lastSeen: stamp, closedAt: undefined, closedBy: undefined }
+
+    return next
+  })
+}
+
 export function setStatus(list: Step[], id: string, status: Step['status'], stamp: number): Step[] {
   return list.map(s => {
     if (s.id !== id) return s

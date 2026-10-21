@@ -17,10 +17,13 @@ It shows how many steps wait on you, how many are Claude's or optional, and the 
 - Every step wears its state, in a colour, a glyph and a word, so it never rests on colour alone: ◐ **Now** (blue), ○ **Next** (purple), ◇ **Decide** (amber), ✦ **Claude** (orange), ◌ **Optional** (teal), ◌ **Earlier** (grey), ✓ **Done** (green), – **Skipped**. The bar above the prompt uses the same colours.
 - Coloured tabs along the top: **To do** (the step in front, then *Up next* and *Claude can do*), **Optional**, **Earlier** (not mentioned lately) and **Done**, each with its count.
 - The step in front sits in a card with why it matters, its link or file, and its SQL or command in a box with Copy; `▸` opens any other step the same way.
-- Claude's steps hand back with one key (`a` fills the prompt; nothing is sent for you). Decisions get `y` approve / `n` decline, which fill the prompt with your answer.
+- **One migration, several databases.** When a reply says to run something on HKL, then NZE/PAW, it is one step with a chip for each place: tick them off as you go (in the panel, or `d` on the bar, which reads `✓ NZE/PAW`), and the last tick closes the step. The bar says which place is next, and `/next-steps list` shows what is ticked.
+- **Send result.** A step that wants its output back (a preflight query, what you saw) has `b` Send result, which starts that reply in the prompt for you to paste into.
+- **Decisions with answers.** When Claude offers choices, each is its own button (`y` the first, `n` the second); otherwise `y` approve / `n` decline. Either fills the prompt with your answer.
+- Claude's steps hand back with one key (`a` fills the prompt; nothing is sent for you).
 - Titles wrap inside their box at any width, and long paths and identifiers break rather than run past the edge.
 
-Keys: `1`-`9` open a step, `c` copy, `p` copy path, `d` done, `s` skip, `a` ask Claude, `y`/`n` approve/decline, `t` `o` `e` `h` switch tabs, `r` refresh, `Esc` close. Every control is a real button, so tab and enter work too.
+Keys: `1`-`9` open a step, `c` copy, `p` copy path, `d` done, `s` skip, `a` ask Claude, `y`/`n` approve/decline (or the first two answers), `b` send result, `t` `o` `e` `h` switch tabs, `r` refresh, `Esc` close. Every control is a real button, so tab and enter work too.
 
 ## How it behaves
 

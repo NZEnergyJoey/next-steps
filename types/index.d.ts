@@ -36,6 +36,17 @@ export type Step = {
   url?: string
   /** Where `path` really is, worked out from git when the step was read (see locateFile). */
   file?: FileLink
+  /**
+   * Where the step must be done, in order, each named in the reply: databases, environments or companies
+   * ("HKL", "NZE/PAW", "staging"). Each is ticked off on its own; with all of them ticked the step is done.
+   */
+  targets?: string[]
+  /** The targets ticked off so far. */
+  doneTargets?: string[]
+  /** The reply wants something sent back once it is done (a query's output, what the reader saw). */
+  asksBack?: boolean
+  /** For a decision: the answers the reply offers, a few words each. */
+  options?: string[]
   /** What makes a later reply's step the same step: a hash of the code, else the URL, path or title words. */
   key: string
   firstSeen: number

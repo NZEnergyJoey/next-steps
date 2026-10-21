@@ -35,7 +35,11 @@ const GROUP_WORDS = new Map<string, StepGroup>([
   ['recommended', 'optional'],
 ])
 
-export const LIMIT = { title: 200, why: 400, copy: 12000, language: 20, path: 500, url: 2000 } as const
+export const LIMIT = { title: 200, why: 400, copy: 12000, language: 20, path: 500, url: 2000, target: 24, option: 60 } as const
+
+/** At most this many targets per step, and options per decision. */
+export const MAX_TARGETS = 6
+export const MAX_OPTIONS = 4
 
 /** At most this many steps are taken from one reply. */
 export const MAX_PER_REPLY = 12
@@ -51,6 +55,9 @@ export type Incoming = {
   path?: string
   url?: string
   file?: FileLink
+  targets?: string[]
+  asksBack?: boolean
+  options?: string[]
   key: string
 }
 
@@ -92,6 +99,20 @@ export function token(v: unknown, max: number): string | undefined {
   if (t === '' || t.length > max || /[\s\u0000-\u001f\u007f]/.test(t)) return undefined
 
   return t
+}
+
+/** A short list of names (targets, options): prose each, no repeats whatever their case, at most `count`. */
+export function names(v: unknown, count: number, max: number): string[] | undefined {
+  if (!Array.isArray(v)) return undefined
+  const out: string[] = []
+  for (const item of v) {
+    const name = prose(item, max)
+    if (name === undefined || name.length > max || out.some(o => o.toLowerCase() === name.toLowerCase())) continue
+    out.push(name)
+    if (out.length >= count) break
+  }
+
+  return out.length === 0 ? undefined : out
 }
 
 const isHttp = (u: string) => /^https?:\/\/[^\s/]+/i.test(u)
@@ -184,15 +205,25 @@ export function parseExtraction(output: string, reply?: string): Extraction | un
       if (url !== undefined && !reply.includes(url)) url = undefined
     }
 
+    const group = toGroup(item.group ?? item.owner)
+    // A target must be named in the reply: a place to run SQL is never guessed. Two or more, or it is no list.
+    let targets = names(item.targets, MAX_TARGETS, LIMIT.target)
+    if (targets !== undefined && reply !== undefined) targets = targets.filter(t => reply.toLowerCase().includes(t.toLowerCase()))
+    if (targets !== undefined && targets.length < 2) targets = undefined
+    const options = group === 'decision' ? names(item.options, MAX_OPTIONS, LIMIT.option) : undefined
+
     const step: Incoming = {
       kind,
-      group: toGroup(item.group ?? item.owner),
+      group,
       title,
       why: prose(item.why ?? item.detail, LIMIT.why),
       copy,
       language: copy === undefined ? undefined : prose(item.language, LIMIT.language),
       path,
       url,
+      targets,
+      asksBack: item.asksBack === true || undefined,
+      options: options !== undefined && options.length >= 2 ? options : undefined,
       key: '',
     }
     step.key = stepKey(step)
@@ -266,6 +297,10 @@ export function reviveSteps(raw: unknown): Step[] {
       missed: Math.max(0, Math.floor(num(item.missed) ?? 0)),
       closedAt: num(item.closedAt),
       closedBy: item.closedBy === 'you' || item.closedBy === 'reply' ? item.closedBy : undefined,
+      targets: names(item.targets, MAX_TARGETS, LIMIT.target),
+      doneTargets: names(item.doneTargets, MAX_TARGETS, LIMIT.target),
+      asksBack: item.asksBack === true || undefined,
+      options: names(item.options, MAX_OPTIONS, LIMIT.option),
     } as const
     out.push({ ...base, key: stepKey(base) })
   }
