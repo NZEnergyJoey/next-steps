@@ -380,6 +380,8 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
       blocker && numberOf.get(blocker.id) !== undefined ? `after ${numberOf.get(blocker.id) ?? ''}` : undefined,
       s.targets && !isClosed ? `${s.targets.length - targetsLeft(s).length}/${s.targets.length}` : undefined,
       showKind ? kindLabel(s) : undefined,
+      // A closed step says who closed it and when: "Claude · 20:14".
+      isClosed && s.closedAt !== undefined ? `${s.closedBy === 'reply' ? 'Claude' : 'you'} · ${clockTime(s.closedAt)}` : undefined,
     ].filter((f): f is string => f !== undefined)
 
     return (

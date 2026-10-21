@@ -427,3 +427,15 @@ describe('the printed list, with a wait', () => {
     expect(out.text).toContain('2. [you] Merge PR 76 (after 1)')
   })
 })
+
+describe('the Done tab', () => {
+  test('each closed step says who closed it and when, without opening it', async ($, on) => {
+    const world = await boot($, on, { model: [answered(reading([{ group: 'you', kind: 'pr', title: 'Merge PR 76' }]))] })
+    await finishTurn($, world, reply('Merge PR 76 when you are ready.'))
+    const ui = await $.ui.mount(pane('desktop'))
+    await ui.press({ key: 'done' })
+    await ui.press({ key: 'tab-done' })
+    expect(await ui.find({ type: 'Text', text: /^you · \d\d:\d\d$/ })).toBeDefined()
+    await ui.unmount()
+  })
+})
