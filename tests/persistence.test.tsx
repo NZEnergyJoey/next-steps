@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { answered, band, boot, buttonKeys, finishTurn, pane, reading, reply } from './support'
+import { answered, band, boot, buttonKeys, finishTurn, pane, reading, reply, stepButton } from './support'
 
 const ROOT = 'C:/Users/j/Code/app'
 const KEY = 'scope:c:/users/j/code/app'
@@ -31,7 +31,7 @@ const bandText = async ($: Parameters<typeof boot>[0]) => {
 describe('keeping the list between sessions', () => {
   test('a new session in the same worktree starts with the list it left, reading nothing', async ($, on) => {
     const world = await boot($, on, { store: { [KEY]: record([saved(), saved({ id: 's2', title: 'Open a PR' })]) } })
-    expect(await bandText($)).toContain('2 pending · Run the migration')
+    expect(await bandText($)).toContain('Run the migration   Next steps · 2 pending')
     expect(world.calls.model).toBe(0)
   })
 
@@ -61,7 +61,7 @@ describe('keeping the list between sessions', () => {
       },
     })
     const ui = await $.ui.mount(pane('terminal'))
-    expect((await ui.find({ type: 'Button', key: 'reveal-closed' }))?.text).toContain('Done · 2')
+    expect((await ui.find({ type: 'Button', key: 'tab-done' }))?.props.label).toContain('Done · 2')
     expect((await ui.find({ type: 'Text', text: /Next steps/ }))?.text).toContain('1 pending')
     await ui.unmount()
   })
@@ -151,10 +151,11 @@ describe('a new reply adds to the list; it does not replace it', () => {
 
     // Three steps in all: the migration (still done), the PR (not mentioned this time, still open) and the new one.
     expect((await ui.find({ type: 'Text', text: /Next steps/ }))?.text).toContain('2 pending')
-    await ui.press({ key: 'reveal-closed' })
-    expect((await ui.find({ type: 'Button', key: 'reveal-closed' }))?.text).toContain('Done · 1')
-    expect(await ui.find({ type: 'Button', text: /Open a PR for feat\/invoices/ })).toBeDefined()
-    expect(await ui.find({ type: 'Button', text: /Update the staging env vars/ })).toBeDefined()
+    expect(await stepButton(ui, /Open a PR for feat\/invoices/)).toBeDefined()
+    expect(await stepButton(ui, /Update the staging env vars/)).toBeDefined()
+    expect((await ui.find({ type: 'Button', key: 'tab-done' }))?.props.label).toContain('Done · 1')
+    await ui.press({ key: 'tab-done' })
+    expect(await stepButton(ui, /Run the invoices migration/)).toBeDefined()
     await ui.unmount()
   })
 
@@ -168,7 +169,7 @@ describe('a new reply adds to the list; it does not replace it', () => {
     expect(world.prompts[1]).toContain('1700000000000-0 | you | Run the invoices migration')
     const ui = await $.ui.mount(pane('terminal'))
     expect((await ui.find({ type: 'Text', text: /Next steps/ }))?.text).toContain('1 pending')
-    await ui.press({ key: 'reveal-closed' })
+    await ui.press({ key: 'tab-done' })
     await ui.press({ key: 'row-1700000000000-0' })
     expect(await ui.find({ type: 'Text', text: /done \(Claude says so\)/ })).toBeDefined()
     await ui.unmount()
@@ -191,7 +192,7 @@ describe('a new reply adds to the list; it does not replace it', () => {
 
     const ui = await $.ui.mount(pane('terminal'))
     expect((await ui.find({ type: 'Text', text: /Next steps/ }))?.text).toContain('3 pending') // the three newer chores
-    expect((await ui.find({ type: 'Button', key: 'reveal-earlier' }))?.text).toContain('Earlier, not mentioned lately · 1')
+    expect((await ui.find({ type: 'Button', key: 'tab-earlier' }))?.props.label).toContain('Earlier · 1')
     await ui.unmount()
   })
 

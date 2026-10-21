@@ -1,14 +1,15 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, UiPressArgument } from 'claude-code'
 
-import type { Reveal, Step, StepStatus } from '../types'
+import type { Flash, Step, StepStatus, View } from '../types'
 
 import { MIN_ANSWER, readReply } from './lib/model'
 import { reconcile, setStatus, type MergeResult } from './lib/merge'
 import { gitRunner, readRepo, withFiles } from './lib/git'
 import { ordered, statusText, summarise } from './lib/select'
+import { FLASH_MS, liveFlash, newSince, progressOf } from './lib/progress'
 import { DAY_MS, load, prune, save } from './lib/store'
-import { clip, fnv, plural } from './lib/text'
+import { fnv } from './lib/text'
 import { taskbar, hasBand } from './ui/taskbar'
 import { panel } from './ui/panel'
 
@@ -28,8 +29,10 @@ const lastAnswerAtom = atom({ plugin: 'next-steps', key: 'lastAnswer' } as const
 const repoAtom = atom({ plugin: 'next-steps', key: 'repo' } as const, null)
 const rootAtom = atom({ plugin: 'next-steps', key: 'root' } as const, '')
 const selectedAtom = atom({ plugin: 'next-steps', key: 'selected' } as const, null)
-const revealAtom = atom({ plugin: 'next-steps', key: 'reveal' } as const, { optional: false, earlier: false, closed: false } satisfies Reveal)
+const viewAtom = atom({ plugin: 'next-steps', key: 'view' } as const, 'todo' satisfies View)
 const paneOpenAtom = atom({ plugin: 'next-steps', key: 'isPaneOpen' } as const, false)
+const flashAtom = atom({ plugin: 'next-steps', key: 'flash' } as const, null)
+const seenAtAtom = atom({ plugin: 'next-steps', key: 'seenAt' } as const, 0)
 
 const PANE = 'next-steps'
 const COMMAND = 'next-steps'
@@ -104,8 +107,18 @@ async function readInto($: EngineInterface, answer: string, hash: string, force:
   lastRead = hash
   await update($, statusAtom, () => 'idle')
 
-  const fresh = (result.v?.added ?? []).filter(s => s.group === 'you' || s.group === 'decision').length
-  if (fresh > 0 && !(await read($, paneOpenAtom))) $.ui.toast(`${plural(fresh, 'new next step')}`)
+  // Quiet by design: no toast for new steps. The bar shows "+n new" until the panel is opened; while it is open,
+  // the reader is looking at them already. A step the reply finished lingers a moment as "✓ Claude finished".
+  if (await read($, paneOpenAtom)) await update($, seenAtAtom, () => stamp)
+  const finished = (result.v?.resolved ?? []).find(s => s.group === 'you' || s.group === 'decision')
+  if (finished) await flash($, finished, 'reply')
+}
+
+/** Shows a just-closed step for a moment while the highlight moves on, then lets it go. */
+async function flash($: EngineInterface, step: Step, by: Flash['by']): Promise<void> {
+  const at = await $.clock.now()
+  await update($, flashAtom, () => ({ id: step.id, title: step.title, at, by }))
+  $.clock.after(FLASH_MS, () => void update($, flashAtom, f => (f !== null && f.at === at ? null : f)).catch(() => undefined))
 }
 
 /**
@@ -136,11 +149,18 @@ async function syncStatus($: EngineInterface): Promise<void> {
 async function openPane($: EngineInterface, focus: boolean): Promise<void> {
   const placed = await $.ui.open({ id: PANE, title: 'Next steps', rows: PANE_ROWS, closeOnEscape: true, ...(focus ? { focus: true as const } : {}) })
   await update($, paneOpenAtom, () => placed.isPlaced)
+  if (placed.isPlaced) {
+    const now = await $.clock.now()
+    await update($, seenAtAtom, () => now)
+  }
 }
 
 async function mark($: EngineInterface, id: string, status: StepStatus): Promise<void> {
   const now = await $.clock.now()
+  const step = (await read($, stepsAtom)).find(s => s.id === id)
   await commit($, list => setStatus(list, id, status, now))
+  if (status === 'done' && step && step.status === 'open') await flash($, step, 'you')
+  if (status === 'open') await update($, flashAtom, f => (f?.id === id ? null : f))
 }
 
 async function copyText($: EngineInterface, value: string, what: string, press?: UiPressArgument): Promise<void> {
@@ -191,6 +211,11 @@ export const register: Register = on => {
     // A read that was under way when the code reloaded will never report back.
     if ((await read($, statusAtom)) === 'working') await update($, statusAtom, () => 'idle')
     await update($, paneOpenAtom, () => false) // a pane from before a reload or resume is gone; ui.render re-opens it on demand
+    await update($, flashAtom, () => null)
+    if ((await read($, seenAtAtom)) === 0) {
+      const started = await $.clock.now()
+      await update($, seenAtAtom, () => started)
+    }
 
     // Pick up this worktree's list from the last session, unless this session already holds one (a reload).
     const now = await $.clock.now()
@@ -284,17 +309,28 @@ export const register: Register = on => {
   // The compact taskbar above the prompt (terminal and desktop). It gives way to a survey, and to the panel once open.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey) return next(e)
-    const summary = summarise(await read($, stepsAtom))
+    const steps = await read($, stepsAtom)
+    const summary = summarise(steps)
     const status = await read($, statusAtom)
     const isOpen = await read($, paneOpenAtom)
-    if (isOpen || !hasBand({ summary, status })) return next(e)
+    const now = await $.clock.now().catch(() => 0) // drawing never fails for want of a clock
+    const flashing = liveFlash(await read($, flashAtom), now)
+    if (isOpen || !hasBand({ summary, status, flash: flashing })) return next(e)
 
     return taskbar(
       $.ui.resolve(e),
-      { summary, status, width: e.props.bodyColumns },
+      {
+        summary,
+        progress: progressOf(steps, summary, now),
+        status,
+        flash: flashing,
+        newCount: newSince(summary, await read($, seenAtAtom)),
+        width: e.props.bodyColumns,
+        surface: e.surface,
+      },
       {
         open: () => openPane($, false),
-        done: step => mark($, step.id, 'done').then(() => $.ui.toast(`Done: ${clip(step.title, 50)}`)),
+        done: step => mark($, step.id, 'done'),
         ask: step => handOff($, step, 'ask'),
         retry: () => void rereadLastReply($),
       },
@@ -302,17 +338,23 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const steps = await read($, stepsAtom)
+    const summary = summarise(steps)
+    const now = await $.clock.now().catch(() => 0) // drawing never fails for want of a clock
     const model = {
-      summary: summarise(await read($, stepsAtom)),
+      summary,
+      progress: progressOf(steps, summary, now),
+      flash: liveFlash(await read($, flashAtom), now),
       status: await read($, statusAtom),
       error: await read($, errorAtom),
       updatedAt: await read($, updatedAtAtom),
       root: await read($, rootAtom),
       repo: await read($, repoAtom),
       selected: await read($, selectedAtom),
-      reveal: await read($, revealAtom),
+      view: await read($, viewAtom),
       width: Math.max(30, (e.props.bodyColumns ?? e.viewport?.columns ?? 80) - 2),
       isFocused: e.props.isFocused,
+      surface: e.surface,
     }
 
     return panel($.ui.resolve(e), model, {
@@ -325,7 +367,7 @@ export const register: Register = on => {
           if (!ok) $.ui.toast('No reply to read yet')
         })
       },
-      toggle: (section: keyof Reveal) => update($, revealAtom, r => ({ ...r, [section]: !r[section] })).then(() => undefined),
+      show: (view: View) => update($, viewAtom, () => view).then(() => undefined),
     })
   })
 }

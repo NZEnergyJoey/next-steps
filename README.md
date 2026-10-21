@@ -14,13 +14,13 @@ It shows how many steps wait on you, how many are Claude's or optional, and the 
 
 **A panel** (`o`, the `open` button, or `/next-steps`):
 
-- **To do**: what needs you, in the order Claude gave them.
-- **Claude can do**: steps you can hand back with one key (`a` fills the prompt; nothing is sent for you).
-- Folded away until asked for: **Optional**, **Earlier, not mentioned lately**, **Done**.
-- Open one step to see why it matters, its link or file, and its SQL or command in a box with Copy.
-- Decisions get `y` approve / `n` decline, which fill the prompt with your answer.
+- Every step wears its state, in a colour, a glyph and a word, so it never rests on colour alone: ◐ **Now** (blue), ○ **Next** (purple), ◇ **Decide** (amber), ✦ **Claude** (orange), ◌ **Optional** (teal), ◌ **Earlier** (grey), ✓ **Done** (green), – **Skipped**. The bar above the prompt uses the same colours.
+- Coloured tabs along the top: **To do** (the step in front, then *Up next* and *Claude can do*), **Optional**, **Earlier** (not mentioned lately) and **Done**, each with its count.
+- The step in front sits in a card with why it matters, its link or file, and its SQL or command in a box with Copy; `▸` opens any other step the same way.
+- Claude's steps hand back with one key (`a` fills the prompt; nothing is sent for you). Decisions get `y` approve / `n` decline, which fill the prompt with your answer.
+- Titles wrap inside their box at any width, and long paths and identifiers break rather than run past the edge.
 
-Keys: `1`-`9` open a step, `c` copy, `p` copy path, `d` done, `s` skip, `a` ask Claude, `y`/`n` approve/decline, `r` refresh, `Esc` close. Every control is a real button, so tab and enter work too.
+Keys: `1`-`9` open a step, `c` copy, `p` copy path, `d` done, `s` skip, `a` ask Claude, `y`/`n` approve/decline, `t` `o` `e` `h` switch tabs, `r` refresh, `Esc` close. Every control is a real button, so tab and enter work too.
 
 ## How it behaves
 
@@ -41,7 +41,7 @@ tsc -p .
 claude plugin test .
 ```
 
-Code is in `hooks/lib` (pure logic: `extract`, `merge`, `select`, `git`, `store`, `model`, `text`) and `hooks/ui` (`taskbar`, `panel`); `hooks/register.tsx` wires them. Tests are in `tests/`.
+Code is in `hooks/lib` (pure logic: `extract`, `merge`, `select`, `progress`, `git`, `store`, `model`, `text`) and `hooks/ui` (`taskbar`, `panel`, `tone` for the states' colours, `svg` for the drawn accents); `hooks/register.tsx` wires them. Tests are in `tests/`.
 
 ## Install
 

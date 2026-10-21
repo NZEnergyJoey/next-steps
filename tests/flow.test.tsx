@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import type { CommandRunInput } from 'claude-code'
 
-import { ALL_SURFACES, MIGRATION_REPLY, MIGRATION_STEPS, TERMINAL_AND_DESKTOP, answered, band, boot, failed, finishTurn, pane, reading, reply } from './support'
+import { ALL_SURFACES, MIGRATION_REPLY, MIGRATION_STEPS, TERMINAL_AND_DESKTOP, answered, band, boot, failed, finishTurn, pane, reading, reply, stepButton } from './support'
 
 const run = ($: { command: { run: (i: CommandRunInput) => Promise<unknown> } }, args: string) =>
   $.command.run({ command: 'next-steps', args, presentation: { isFullscreen: false, columns: 100 } } as unknown as CommandRunInput)
@@ -9,17 +9,20 @@ const run = ($: { command: { run: (i: CommandRunInput) => Promise<unknown> } }, 
 describe('reading a reply', () => {
   test('a long reply becomes steps, shown in the taskbar, without opening the panel', async ($, on) => {
     const world = await boot($, on, { model: [answered(reading(MIGRATION_STEPS))] })
+    await world.clock.advance(1) // the reply lands after the session started, so its steps are new
     await finishTurn($, world, MIGRATION_REPLY)
 
     expect(world.calls.model).toBe(1)
     expect(world.calls.opens).toBe(0) // the old mod opened a sidebar here; now the taskbar says it
-    expect(world.calls.toast).toContain('2 new next steps')
+    // Quiet by design: new steps never pop up a toast; the bar marks them "+2 new" until the panel is opened.
+    expect(world.calls.toast).toEqual([])
 
     for (const surface of TERMINAL_AND_DESKTOP) {
       const ui = await $.ui.mount(band(surface))
       const line = await ui.find({ type: 'Text', text: /Next steps/ })
       expect(line?.text).toContain('2 pending')
       expect(line?.text).toContain('Run the invoices migration')
+      expect(await ui.find({ type: 'Text', text: /\+2 new/ })).toBeDefined()
       await ui.unmount()
     }
   })
@@ -88,7 +91,7 @@ describe('failures', () => {
     expect(world.calls.model).toBe(2)
     const ui = await $.ui.mount(pane('terminal'))
     expect(await ui.find({ type: 'Text', text: /Press r to try again/ })).toBeUndefined()
-    expect(await ui.find({ type: 'Button', text: /Run the invoices migration/ })).toBeDefined()
+    expect(await stepButton(ui, /Run the invoices migration/)).toBeDefined()
     await ui.unmount()
   })
 
@@ -101,7 +104,7 @@ describe('failures', () => {
     for (const surface of ALL_SURFACES) {
       const ui = await $.ui.mount(pane(surface))
       expect(await ui.find({ type: 'Text', text: /Couldn't reach the model/ })).toBeDefined()
-      expect(await ui.find({ type: 'Button', text: /Run the invoices migration/ })).toBeDefined()
+      expect(await stepButton(ui, /Run the invoices migration/)).toBeDefined()
       await ui.unmount()
     }
   })

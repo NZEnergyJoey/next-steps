@@ -2,7 +2,8 @@ import { describe, expect, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { ALL_SURFACES, SQL, TERMINAL_AND_DESKTOP, answered, band, boot, buttonKeys, finishTurn, pane, reading, reply, rowKey, type Setup } from './support'
+import { ALL_SURFACES, SQL, TERMINAL_AND_DESKTOP, answered, band, boot, buttonKeys, finishTurn, pane, reading, reply, rowKey, stepButton, type Setup } from './support'
+import { FLASH_MS } from '../hooks/lib/progress'
 
 const REPLY = reply(
   'Run supabase/migrations/0042_invoices.sql in the SQL editor:',
@@ -41,7 +42,7 @@ describe('the taskbar', () => {
       const wide = await $.ui.mount(band(surface, { bodyColumns: 120 }))
       const text = (await wide.find({ type: 'Text', text: /Next steps/ }))?.text ?? ''
       expect(text).toContain('Next steps · 3 pending')
-      expect(text).toContain('(1 for Claude · 1 optional)')
+      expect(text).toContain('Next steps · 3 pending · 1 for Claude · 1 optional')
       expect(text).toContain('Run the invoices migration')
       expect(await buttonKeys(wide)).toEqual(['done', 'open'])
       await wide.unmount()
@@ -91,11 +92,17 @@ describe('the taskbar', () => {
     const world = await ready($, on)
     for (const surface of TERMINAL_AND_DESKTOP) {
       const ui = await $.ui.mount(band(surface))
+      const title = (await ui.find({ type: 'Text', text: /Next steps/ }))?.text ?? ''
       await ui.press({ key: 'done' })
+      // The finished step lingers a moment on the bar, then the next one takes its place.
+      const moment = (await ui.find({ type: 'Text', text: /✓ Done · / }))?.text ?? ''
+      expect(title).toContain(moment.replace('✓ Done · ', ''))
+      await world.clock.advance(FLASH_MS)
+      expect(await ui.find({ type: 'Text', text: /✓ Done · / })).toBeUndefined()
       await ui.unmount()
     }
-    // Two presses, two steps closed: the migration, then the approval.
-    expect(world.calls.toast.filter(t => t.startsWith('Done:'))).toEqual(['Done: Run the invoices migration', 'Done: Approve dropping the legacy invoices table'])
+    // Two presses, two steps closed: the migration, then the approval. No toast for either: the bar says it.
+    expect(world.calls.toast).toEqual([])
     const ui = await $.ui.mount(band('terminal'))
     const text = (await ui.find({ type: 'Text', text: /Next steps/ }))?.text ?? ''
     expect(text).toContain('1 pending')
@@ -145,9 +152,13 @@ describe('the panel', () => {
       // The step in front shows why, the file, the code and its actions; the others only their title.
       expect(await ui.find({ type: 'Text', text: /Adds the table the new page reads from/ })).toBeDefined()
       expect(await ui.find({ type: 'Code' })).toBeDefined()
-      expect((await ui.find({ type: 'Text', text: /For you · to do/ }))?.text).toBeDefined()
+      // The step in front sits in the spotlight card; the rest are listed under "Up next".
+      expect(await ui.find({ type: 'Text', text: /^Now · step 1 of 3$/ })).toBeDefined()
+      const heading = await ui.find({ type: 'Text', text: /^Up next$/ })
+      expect(heading?.props.color).toBe('text')
+      expect(heading?.props.weight).toBe('semibold')
       expect(await buttonKeys(ui)).toEqual(
-        expect.arrayContaining(['tick-1700000000000-0', 'copy', 'path', 'done', 'skip', 'refresh', 'reveal-optional']),
+        expect.arrayContaining(['tick-1700000000000-0', 'copy', 'path', 'done', 'skip', 'refresh', 'tab-optional']),
       )
       expect(await ui.find({ type: 'Text', text: /^Needs your decision/ })).toBeUndefined()
       expect(await ui.find({ type: 'Text', text: /Rename the helper/ })).toBeUndefined() // optional: folded away
@@ -207,22 +218,24 @@ describe('the panel', () => {
   test('optional steps stay folded until asked for', async ($, on) => {
     await ready($, on)
     const ui = await $.ui.mount(pane('terminal'))
-    expect((await ui.find({ type: 'Button', key: 'reveal-optional' }))?.text).toContain('Optional · 1 ▸')
-    await ui.press({ key: 'reveal-optional' })
-    expect(await ui.find({ type: 'Button', text: /Rename the helper/ })).toBeDefined()
-    expect((await ui.find({ type: 'Button', key: 'reveal-optional' }))?.text).toContain('▾')
+    expect((await ui.find({ type: 'Button', key: 'tab-optional' }))?.props.label).toContain('Optional · 1')
+    await ui.press({ key: 'tab-optional' })
+    expect(await stepButton(ui, /Rename the helper/)).toBeDefined()
+    expect((await ui.find({ type: 'Button', key: 'tab-optional' }))?.text).toContain('●')
     await ui.unmount()
   })
 
   test('ticking a step closes it into Done; ticking it there brings it back', async ($, on) => {
     await ready($, on)
     const ui = await $.ui.mount(pane('terminal'))
+    expect((await ui.find({ type: 'Button', key: 'tick-1700000000000-0' }))?.props.label).toBe('Done')
     await ui.press({ key: 'tick-1700000000000-0' })
     expect((await ui.find({ type: 'Text', text: /Next steps/ }))?.text).toContain('2 pending')
-    expect((await ui.find({ type: 'Button', key: 'reveal-closed' }))?.text).toContain('Done · 1')
+    expect((await ui.find({ type: 'Button', key: 'tab-done' }))?.props.label).toContain('Done · 1')
 
-    await ui.press({ key: 'reveal-closed' })
-    expect(await ui.find({ type: 'Button', text: /Run the invoices migration/ })).toBeDefined()
+    await ui.press({ key: 'tab-done' })
+    expect(await stepButton(ui, /Run the invoices migration/)).toBeDefined()
+    expect((await ui.find({ type: 'Button', key: 'tick-1700000000000-0' }))?.props.label).toBe('Reopen')
     await ui.press({ key: 'tick-1700000000000-0' })
     expect((await ui.find({ type: 'Text', text: /Next steps/ }))?.text).toContain('3 pending')
     await ui.unmount()
@@ -232,8 +245,8 @@ describe('the panel', () => {
     await ready($, on)
     const ui = await $.ui.mount(pane('terminal'))
     await ui.press({ key: 'skip' })
-    await ui.press({ key: 'reveal-closed' })
-    const skipped = await ui.find({ type: 'Text', text: /skipped/ })
+    await ui.press({ key: 'tab-done' })
+    const skipped = await ui.find({ type: 'Text', text: /Skipped/ })
     expect(skipped).toBeDefined()
     await ui.unmount()
   })
@@ -279,9 +292,10 @@ describe('the panel', () => {
     const world = await boot($, on, { model: [answered(reading([{ group: 'you', kind: 'action', title: long }]))] })
     await finishTurn($, world, reply(long))
     const ui = await $.ui.mount(pane('mobile', { bodyColumns: 24 }))
-    const row = await ui.find({ type: 'Button', text: /Ask the platform/ })
-    expect(row?.text.endsWith('…')).toBe(true)
-    expect(row?.text.length).toBeLessThan(long.length)
+    // The step in the spotlight is never cut: its whole title wraps inside the card.
+    const row = await stepButton(ui, /Ask the platform/)
+    expect(row?.props.label).toBe(long)
+    expect(await ui.find({ type: 'Text', text: long })).toBeDefined()
     await ui.unmount()
   })
 

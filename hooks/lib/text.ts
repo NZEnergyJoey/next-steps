@@ -12,6 +12,23 @@ export function clip(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`
 }
 
+/** The zero-width space: an invisible place where a line may break. */
+const BREAK = String.fromCharCode(0x200b)
+
+/**
+ * Long unbroken runs (paths, identifiers, URLs, hashes) given places to wrap, for surfaces that break lines at spaces
+ * only: a zero-width space after each separator, and every 24 characters of a run with none. For display alone.
+ */
+export function breakable(text: string, run = 18): string {
+  return text.replace(new RegExp(`\\S{${run},}`, 'g'), w =>
+    w
+      .replace(/([/\\_.:=&?,-])(?=\S)/g, `$1${BREAK}`)
+      .split(BREAK)
+      .map(part => part.replace(/(.{24})(?=.)/g, `$1${BREAK}`))
+      .join(BREAK),
+  )
+}
+
 export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 
 export function clockTime(ms: number): string {

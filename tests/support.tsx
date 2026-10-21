@@ -187,9 +187,14 @@ export const ALL_SURFACES = ['terminal', 'desktop', 'vscode', 'mobile'] as const
 export const buttonKeys = async (ui: { findAll: (q: { type: string }) => Promise<Array<{ key: string | undefined }>> }) =>
   (await ui.findAll({ type: 'Button' })).map(b => b.key ?? '')
 
-/** The key of the row button for the step with this title. */
-export async function rowKey(ui: { find: (q: { type: string; text: RegExp }) => Promise<{ key: string | undefined } | undefined> }, title: string) {
-  const row = await ui.find({ type: 'Button', text: new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) })
+type Finder = { findAll: (q: { type: string }) => Promise<Array<{ key: string | undefined; props: Record<string, unknown> }>> }
 
-  return row?.key ?? ''
+/** The button that opens the step whose title matches: it is named by the title and drawn as a chevron. */
+export async function stepButton(ui: Finder, title: RegExp) {
+  return (await ui.findAll({ type: 'Button' })).find(b => b.key?.startsWith('row-') === true && title.test(String(b.props.label ?? '')))
+}
+
+/** The key of the row button for the step with this title. */
+export async function rowKey(ui: Finder, title: string) {
+  return (await stepButton(ui, new RegExp(title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))))?.key ?? ''
 }

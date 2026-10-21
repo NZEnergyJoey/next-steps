@@ -63,8 +63,14 @@ export type Repo = { owner: string; name: string; branch: string }
 
 export type StepsStatus = 'idle' | 'working' | 'error'
 
-/** Which folded sections of the panel the reader has opened. */
-export type Reveal = { optional: boolean; earlier: boolean; closed: boolean }
+/** The panel's tab: what still needs doing, the suggestions, the steps not mentioned lately, or what is closed. */
+export type View = 'todo' | 'optional' | 'earlier' | 'done'
+
+/**
+ * The step that was just closed, shown for a moment ("✓ Done · …") while the highlight moves on to the next one.
+ * `by` says who closed it: the reader, or a reply that said it was finished.
+ */
+export type Flash = { id: string; title: string; at: number; by: 'you' | 'reply' }
 
 /** What is kept between sessions for one worktree (see lib/store.ts). */
 export type Saved = {
@@ -89,8 +95,13 @@ declare module 'claude-code' {
       root: string
       /** The step open in the panel: null follows the next step, '' keeps every step folded. */
       selected: string | null
-      reveal: Reveal
+      /** The panel's tab. */
+      view: View
       isPaneOpen: boolean
+      /** The step just closed, for the moment the highlight moves on; null once that moment has passed. */
+      flash: Flash | null
+      /** When the reader last had the panel open: steps first seen after it count as new on the bar. */
+      seenAt: number
     }
   }
 }
