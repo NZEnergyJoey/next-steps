@@ -336,3 +336,11 @@ describe('the bar links the pull request in front', () => {
     }
   })
 })
+
+describe('waiting ends when the conversation moves on', () => {
+  test('a step waiting on one the replies stopped mentioning no longer waits', () => {
+    const steps = [step('pre', { missed: 9 }), step('merge', { kind: 'pr', after: 'pre' })]
+    expect(waitingOn(steps[1]!, steps)).toBeUndefined()
+    expect(summarise(steps).next?.id).toBe('merge')
+  })
+})

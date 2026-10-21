@@ -192,7 +192,6 @@ export function prune(list: Step[]): Step[] {
   return list.filter(s => keep.has(s.id))
 }
 
-/** Marks a step done, skipped, or open again; the one place a reader's tick is turned into a change. */
 /** The targets of a step not yet ticked, in order. */
 export const targetsLeft = (s: Pick<Step, 'targets' | 'doneTargets'>): string[] =>
   (s.targets ?? []).filter(t => !(s.doneTargets ?? []).some(d => d.toLowerCase() === t.toLowerCase()))
@@ -214,6 +213,7 @@ export function setTarget(list: Step[], id: string, target: string, isDone: bool
   })
 }
 
+/** Marks a step done, skipped, or open again; the one place a reader's tick is turned into a change. */
 export function setStatus(list: Step[], id: string, status: Step['status'], stamp: number): Step[] {
   return list.map(s => {
     if (s.id !== id) return s

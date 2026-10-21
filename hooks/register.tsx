@@ -215,8 +215,9 @@ function listing(list: Step[]): string {
 }
 
 /**
- * What `/next-steps all` prints: every worktree with something open, newest first, with what waits on the reader in
- * each. With many worktrees on the go, it is the one place to see which migrations and merges are still outstanding.
+ * What `/next-steps all` prints: every worktree with something open, in the order given (this one first, then the
+ * rest newest first), with what waits on the reader in each. With many worktrees on the go, it is the one place to
+ * see which migrations and merges are still outstanding.
  */
 export function everywhere(records: Array<{ root: string; steps: Step[]; updatedAt: number }>, here: string, now: number): string {
   const lines: string[] = []

@@ -7,9 +7,12 @@ import { plural } from './text'
 
 export const isStale = (s: Step) => s.status === 'open' && s.missed >= STALE_AFTER
 
-/** The open step this one waits for, if any: "merge only after the migration is verified". */
+/**
+ * The open step this one waits for, if any: "merge only after the migration is verified". One the replies have
+ * stopped mentioning (Earlier) holds nothing up: the conversation has moved on from it.
+ */
 export const waitingOn = (s: Step, steps: Step[]): Step | undefined =>
-  s.after === undefined ? undefined : steps.find(o => o.id === s.after && o.status === 'open' && o.id !== s.id)
+  s.after === undefined ? undefined : steps.find(o => o.id === s.after && o.status === 'open' && !isStale(o) && o.id !== s.id)
 
 /** Steps that can be done now first, then those waiting on another, each in the order given. */
 const readyFirst = (list: Step[], steps: Step[]) => [...list.filter(s => !waitingOn(s, steps)), ...list.filter(s => waitingOn(s, steps))]
