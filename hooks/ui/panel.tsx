@@ -545,7 +545,8 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
         <Box flexDirection="column" marginTop={1}>
           <Text weight="medium">No next steps yet</Text>
           <Text dimColor wrap="wrap">
-            They appear here when Claude hands work back to you, with the one to do first in the spotlight.
+            They appear here when Claude hands work back to you, with the one to do first in the spotlight. /next-steps all
+            shows what is open in your other worktrees.
           </Text>
         </Box>
       )}
@@ -577,7 +578,7 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
       {m.isFocused && (
         <Box marginTop={1}>
           <Text dimColor size="caption" wrap="wrap">
-            1–9 open a step · d done · c copy · t o e h switch tabs · Tab moves between buttons · Esc returns to the prompt
+            1–9 open a step · d done · c copy · b send result · t o e h switch tabs · Tab moves between buttons · Esc returns to the prompt
           </Text>
         </Box>
       )}
