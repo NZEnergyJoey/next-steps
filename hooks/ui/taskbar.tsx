@@ -31,6 +31,8 @@ export type BandModel = {
   width: number
   /** The surface drawing it: every surface but the terminal draws the ring. */
   surface: RenderSurface
+  /** Where the step in front links to (its pull request, say), when it links anywhere. */
+  href?: string
 }
 
 export type BandActions = {
@@ -59,7 +61,7 @@ export function ringGlyph(p: Pick<Progress, 'ratio' | 'total' | 'position'>): st
 }
 
 export function taskbar(E: ElementTable, m: BandModel, a: BandActions): RenderElement {
-  const { Box, Text, Button } = E
+  const { Box, Text, Button, Link } = E
   const Svg = m.surface !== 'terminal' ? (E as ElementTable<'desktop'>).Svg : undefined
   const s = m.summary
   const step = s.next
@@ -75,6 +77,7 @@ export function taskbar(E: ElementTable, m: BandModel, a: BandActions): RenderEl
   const tone = step === undefined ? undefined : TONES[step.group === 'decision' ? 'decide' : toneOf(step, true)]
   // A step to run in several places says which one is next: "Run migration 97 · NZE/PAW next".
   const nextPlace = step === undefined ? undefined : targetsLeft(step)[0]
+  const prNumber = m.href === undefined ? undefined : /\/pull\/(\d+)$/.exec(m.href)?.[1]
 
   return (
     <Box flexDirection="row" width={Svg ? '100%' : m.width} gap={2} alignItems="center">
@@ -150,6 +153,10 @@ export function taskbar(E: ElementTable, m: BandModel, a: BandActions): RenderEl
           <Button key="ask" plain hotkey="a" onPress={() => a.ask(step)}>
             Ask Claude
           </Button>
+        )}
+        {m.href !== undefined && roomy && !m.flash && (
+          // The pull request (or page) the step is about, a click away: "#76 ↗".
+          <Link href={m.href} label={`${prNumber !== undefined ? `#${prNumber}` : 'Link'} ↗`} />
         )}
         <Button key="open" plain hotkey="o" onPress={() => a.open()}>
           Open

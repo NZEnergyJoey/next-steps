@@ -165,6 +165,9 @@ export async function withFiles(run: GitRun, root: string, r: Repo | null, found
 /** The link a step leads with: its own URL, else a ready-made compare page for "open a PR" steps. */
 export function prHref(r: Repo | null, step: Pick<Step, 'kind' | 'title' | 'url'>): string | undefined {
   if (step.url) return step.url
+  // "Merge PR #76", "Review PR #165": the pull request itself, wherever the step names one by number.
+  const pr = /\b(?:PR|pull request)\s*#(\d+)\b/i.exec(step.title)
+  if (r && pr) return `https://github.com/${r.owner}/${r.name}/pull/${pr[1]}`
   if (r && step.kind === 'pr' && /\b(open|create|raise|make)\b/i.test(step.title)) {
     return `https://github.com/${r.owner}/${r.name}/compare/${r.branch}?expand=1`
   }

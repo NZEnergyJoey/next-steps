@@ -6,6 +6,7 @@ import { parseExtraction, reviveSteps } from '../hooks/lib/extract'
 import { reconcile, setStatus, setTarget, targetsLeft } from '../hooks/lib/merge'
 import { buildPrompt } from '../hooks/lib/model'
 import { contains } from '../hooks/lib/text'
+import { prHref } from '../hooks/lib/git'
 import { summarise, waitingOn } from '../hooks/lib/select'
 import { scopeKey } from '../hooks/lib/store'
 import { everywhere } from '../hooks/register'
@@ -310,5 +311,28 @@ describe('the same step, said with more words', () => {
     expect(contains('Merge PR #76', 'Merge PR #77 once CI is green')).toBe(false)
     expect(contains('Run the tests', 'Run the tests on staging and production')).toBe(false) // two words of meaning
     expect(contains('Unrelated chore number 1', 'Unrelated chore number 2')).toBe(false)
+  })
+})
+
+describe('pull requests', () => {
+  test('a step that names a PR by number links to it; one that opens a PR links to the compare page', () => {
+    const repo = { owner: 'NZEnergyJoey', name: 'nzenergy-portal', branch: 'feat/po-numbering' }
+    expect(prHref(repo, { kind: 'pr', title: 'Merge PR #76 once both verifiers pass' })).toBe('https://github.com/NZEnergyJoey/nzenergy-portal/pull/76')
+    expect(prHref(repo, { kind: 'review', title: 'Review pull request #165' })).toBe('https://github.com/NZEnergyJoey/nzenergy-portal/pull/165')
+    expect(prHref(repo, { kind: 'pr', title: 'Open a PR for feat/po-numbering' })).toBe('https://github.com/NZEnergyJoey/nzenergy-portal/compare/feat/po-numbering?expand=1')
+    expect(prHref(repo, { kind: 'sql', title: 'Run migration 134 for issue #155' })).toBeUndefined()
+    expect(prHref(null, { kind: 'pr', title: 'Merge PR #76' })).toBeUndefined()
+  })
+})
+describe('the bar links the pull request in front', () => {
+  test('a step that names a PR shows "#76 ↗" on the bar, linked to it', async ($, on) => {
+    const world = await boot($, on, { model: [answered(reading([{ group: 'you', kind: 'pr', title: 'Merge PR #76 once both verifiers pass' }]))] })
+    await finishTurn($, world, reply('Both verifiers pass, so merge PR #76 whenever you are ready.'))
+    for (const surface of ['terminal', 'desktop'] as const) {
+      const bar = await $.ui.mount(band(surface, { bodyColumns: 120 }))
+      const link = await bar.find({ type: 'Link' })
+      expect([link?.props.href, link?.props.label]).toEqual(['https://github.com/acme/app/pull/76', '#76 ↗'])
+      await bar.unmount()
+    }
   })
 })

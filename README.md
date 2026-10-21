@@ -19,8 +19,10 @@ It shows how many steps wait on you, how many are Claude's or optional, and the 
 - The step in front sits in a card with why it matters, its link or file, and its SQL or command in a box with Copy; `▸` opens any other step the same way.
 - **One migration, several databases.** When a reply says to run something on HKL, then NZE/PAW, it is one step with a chip for each place: tick them off as you go (the chips in the panel, or `d` in the panel or on the bar, which reads `✓ NZE/PAW`), and the last tick closes the step. The bar says which place is next, and `/next-steps list` shows what is ticked.
 - **Steps that wait.** "Merge only after 97 is verified": the merge shows ◷ **Waiting** and *after 2*, never takes the spotlight while the migration is open, and moves up by itself once it is done.
+- **Replies tick places too.** Paste HKL's preflight back and, when Claude says HKL is clean, HKL ticks itself.
 - **Send result.** A step that wants its output back (a preflight query, what you saw) has `b` Send result, which starts that reply in the prompt for you to paste into.
 - **Decisions with answers.** When Claude offers choices, each is its own button (`y` the first, `n` the second); otherwise `y` approve / `n` decline. Either fills the prompt with your answer.
+- **Pull requests a click away.** A step that names a PR ("Merge PR #76") links to it, in the panel and as `#76 ↗` on the bar; "Open a PR" links to the compare page.
 - Claude's steps hand back with one key (`a` fills the prompt; nothing is sent for you).
 - The header names the branch the list belongs to, so with many worktrees open you know whose list it is.
 - Titles wrap inside their box at any width, and long paths and identifiers break rather than run past the edge.

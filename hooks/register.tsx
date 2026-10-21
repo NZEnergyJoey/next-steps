@@ -5,7 +5,7 @@ import type { Flash, Step, StepStatus, View } from '../types'
 
 import { MIN_ANSWER, readReply } from './lib/model'
 import { reconcile, setStatus, setTarget, targetsLeft, type MergeResult } from './lib/merge'
-import { gitRunner, readRepo, withFiles } from './lib/git'
+import { gitRunner, prHref, readRepo, withFiles } from './lib/git'
 import { ordered, statusText, summarise } from './lib/select'
 import { FLASH_MS, liveFlash, newSince, progressOf } from './lib/progress'
 import { DAY_MS, load, loadAll, prune, save } from './lib/store'
@@ -379,6 +379,7 @@ export const register: Register = on => {
         status,
         flash: flashing,
         newCount: newSince(summary, await read($, seenAtAtom)),
+        href: summary.next === undefined ? undefined : prHref(await read($, repoAtom), summary.next),
         width: e.props.bodyColumns,
         surface: e.surface,
       },
