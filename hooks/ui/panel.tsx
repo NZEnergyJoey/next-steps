@@ -64,6 +64,8 @@ export type PanelActions = {
   tickTarget: (id: string, target: string, isDone: boolean) => void
   copy: (value: string, what: string, press: UiPressArgument) => void
   handOff: (step: Step, how: HandOff, option?: string) => void
+  /** Hands several steps back to Claude in one prompt. */
+  askAll: (steps: Step[]) => void
   refresh: () => void
   show: (view: View) => void
 }
@@ -413,7 +415,7 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
     )
   }
 
-  const heading = (label: string, n: number) => (
+  const heading = (label: string, n: number, extra?: RenderElement) => (
     <Box flexDirection="row" gap={1} alignItems="center" marginTop={1}>
       <Text color="text" weight="semibold" size={rich ? 'footnote' : undefined} dimColor={!rich}>
         {label}
@@ -421,16 +423,24 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
       <Text dimColor size="caption" tabular>
         {String(n)}
       </Text>
+      {extra}
     </Box>
   )
 
-  const section = (label: string, list: Step[]) =>
+  const section = (label: string, list: Step[], extra?: RenderElement) =>
     list.length === 0 ? null : (
       <Box flexDirection="column">
-        {heading(label, list.length)}
+        {heading(label, list.length, extra)}
         {list.map(line)}
       </Box>
     )
+  // Several things Claude offered to do go back in one prompt, rather than one press each.
+  const askAllButton =
+    forClaude.length >= 2 ? (
+      <Button key="ask-all" plain dimColor onPress={() => a.askAll(forClaude)}>
+        Ask for all
+      </Button>
+    ) : undefined
 
   /**
    * One tab: a dot in its state's colour, then its name and count; the open one is filled, and tinted where it can
@@ -576,7 +586,7 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
 
       {view === 'todo' && now && spotlight(now)}
       {view === 'todo' && section('Up next', upNext)}
-      {view === 'todo' && section('Claude can do', forClaude)}
+      {view === 'todo' && section('Claude can do', forClaude, askAllButton)}
       {view === 'optional' && section('Optional', sum.optional)}
       {view === 'earlier' && (
         <Box flexDirection="column">

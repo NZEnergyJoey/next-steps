@@ -194,6 +194,13 @@ async function handOff($: EngineInterface, step: Step, how: HandOff, option?: st
   )
 }
 
+/** Hands every listed step back to Claude in one prompt, one line each, for the reader to read and send. */
+async function askAll($: EngineInterface, steps: Step[]): Promise<void> {
+  const text = ['Please go ahead with these next steps:', ...steps.map(s => `- ${s.title}`)].join('\n')
+  const r = await $.prompt.fill({ text, mode: 'insert' })
+  $.ui.toast(r.isFilled ? 'Added to your prompt. Press Enter to send it.' : "Couldn't fill the prompt here")
+}
+
 async function rereadLastReply($: EngineInterface): Promise<boolean> {
   const answer = await read($, lastAnswerAtom)
   if (answer === '') return false
@@ -420,6 +427,7 @@ export const register: Register = on => {
       tickTarget: (id, target, isDone) => tickTarget($, id, target, isDone),
       copy: (value, what, press) => copyText($, value, what, press),
       handOff: (step, how, option) => handOff($, step, how, option),
+      askAll: steps => askAll($, steps),
       refresh: () => {
         void rereadLastReply($).then(ok => {
           if (!ok) $.ui.toast('No reply to read yet')

@@ -377,3 +377,16 @@ describe('a decision on the bar', () => {
     await bar.unmount()
   })
 })
+
+describe('handing several steps back at once', () => {
+  test('"Ask for all" puts every step Claude offered in one prompt, sending nothing', async ($, on) => {
+    const world = await boot($, on, {
+      model: [answered(reading([{ group: 'you', kind: 'pr', title: 'Merge PR #76' }, { group: 'claude', kind: 'check', title: 'Run the tests' }, { group: 'claude', kind: 'action', title: 'Update the vault notes' }]))],
+    })
+    await finishTurn($, world, reply('Merge PR #76. I can run the tests and update the vault notes if you like.'))
+    const ui = await $.ui.mount(pane('terminal'))
+    await ui.press({ key: 'ask-all' })
+    expect(world.calls.fills).toEqual(['Please go ahead with these next steps:\n- Run the tests\n- Update the vault notes'])
+    await ui.unmount()
+  })
+})
