@@ -184,7 +184,8 @@ async function handOff($: EngineInterface, step: Step, how: HandOff, option?: st
     how === 'ask'
       ? `Please go ahead with this next step: ${step.title}`
       : how === 'result'
-        ? `Result of "${step.title}": `
+        ? // Naming the place lets Claude's answer tick exactly that one ("HKL is clean").
+          `Result of "${step.title}"${targetsLeft(step)[0] !== undefined ? ` on ${targetsLeft(step)[0]}` : ''}: `
         : how === 'option'
           ? `Decision on "${step.title}": ${option ?? ''}.`
           : `Decision on "${step.title}": ${how === 'approve' ? 'approved' : 'declined'}.`

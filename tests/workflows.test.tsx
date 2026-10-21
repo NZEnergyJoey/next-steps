@@ -159,7 +159,7 @@ describe('in the panel and on the bar', () => {
     await finishTurn($, world, REPLY)
     const ui = await $.ui.mount(pane('terminal'))
     await ui.press({ key: 'result' })
-    expect(world.calls.fills).toEqual(['Result of "Run the read-only preflight": '])
+    expect(world.calls.fills).toEqual(['Result of "Run the read-only preflight" on HKL: ']) // the place it is for, so the reply can tick it
     expect(world.calls.toast.at(-1)).toContain('Paste the result')
     await ui.unmount()
   })

@@ -20,7 +20,7 @@ The ring fills as you work through the round. The step in front leads, wearing i
 - **One migration, several databases.** When a reply says to run something on HKL, then NZE/PAW, it is one step with a chip for each place: tick them off as you go (the chips in the panel, or `d` in the panel or on the bar, which reads `✓ NZE/PAW`), and the last tick closes the step. The bar says which place is next, and `/next-steps list` shows what is ticked.
 - **Steps that wait.** "Merge only after 97 is verified": the merge shows ◷ **Waiting** and *after 2*, never takes the spotlight while the migration is open, and moves up by itself once it is done.
 - **Replies tick places too.** Paste HKL's preflight back and, when Claude says HKL is clean, HKL ticks itself.
-- **Send result.** A step that wants its output back (a preflight query, what you saw) has `b` Send result, which starts that reply in the prompt for you to paste into.
+- **Send result.** A step that wants its output back (a preflight query, what you saw) has `b` Send result, which starts that reply in the prompt for you to paste into, naming the database it is for (`Result of "Run the preflight" on HKL:`) so Claude's answer can tick that one.
 - **Decisions with answers.** When Claude offers choices, each is listed (wrapping at any width) with its own Choose button (`y` the first, `n` the second); otherwise `y` approve / `n` decline. Either fills the prompt with your answer.
 - **Pull requests a click away.** A step that names a PR ("Merge PR #76") links to it, in the panel and as `#76 ↗` on the bar; "Open a PR" links to the compare page.
 - Claude's steps hand back with one key (`a` fills the prompt; nothing is sent for you), or all at once with **Ask for all** on the *Claude can do* heading.
