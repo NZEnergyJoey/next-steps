@@ -4,6 +4,8 @@ import type { CommandRunInput } from 'claude-code'
 import type { Step } from '../types'
 import { parseExtraction, reviveSteps } from '../hooks/lib/extract'
 import { reconcile, setStatus, setTarget, targetsLeft } from '../hooks/lib/merge'
+import { buildPrompt } from '../hooks/lib/model'
+import { contains } from '../hooks/lib/text'
 import { summarise, waitingOn } from '../hooks/lib/select'
 import { scopeKey } from '../hooks/lib/store'
 import { everywhere } from '../hooks/register'
@@ -240,5 +242,73 @@ describe('every worktree at once', () => {
     expect(out.text).toContain('app (this one) · 3 for you')
     expect(out.text).toContain('  ○ Run the read-only preflight (HKL, NZE/PAW to go)')
     expect(out.text).toContain('invoice-notes · 1 for you')
+  })
+})
+
+describe('a reply that finishes one place', () => {
+  test('"id@place" ticks that place; the last place closes the step as Claude finishing it', () => {
+    const list = [step('a', { targets: ['HKL', 'NZE/PAW'] })]
+    const once = reconcile(list, [], ['a@hkl', 'a@Mars', 'nope@HKL'], T0 + 1)
+    expect([once.steps[0]?.status, once.steps[0]?.doneTargets, once.resolved]).toEqual(['open', ['HKL'], []])
+    const twice = reconcile(once.steps, [], ['a@NZE/PAW'], T0 + 2)
+    expect([twice.steps[0]?.status, twice.steps[0]?.closedBy, twice.resolved.map(s => s.id)]).toEqual(['done', 'reply', ['a']])
+  })
+
+  test('the model is told which places each open step still has to go', () => {
+    const prompt = buildPrompt('reply', [step('a', { title: 'Apply 97', targets: ['HKL', 'NZE/PAW'], doneTargets: ['HKL'] })])
+    expect(prompt).toContain('a | you | Apply 97 | places to go: NZE/PAW')
+  })
+
+  test('pasting the HKL results and hearing it is clean ticks HKL in the panel', async ($, on) => {
+    const world = await boot($, on, {
+      model: (call, prompt) => {
+        if (call === 1) return answered(reading(STEPS))
+        const id = /(\S+) \| you \| Run the read-only preflight/.exec(prompt)?.[1] ?? ''
+
+        return answered(reading([], [`${id}@HKL`]))
+      },
+    })
+    await finishTurn($, world, REPLY)
+    await finishTurn($, world, reply('Thanks, the HKL preflight is clean: every row says PASS. Now run the same query on NZE/PAW and paste that too.'))
+    const ui = await $.ui.mount(pane('desktop'))
+    expect(await ui.find({ type: 'Text', text: /^1\/2$/ })).toBeDefined()
+    expect((await ui.find({ type: 'Button', key: 'done' }))?.text).toBe('✓ NZE/PAW done')
+    await ui.unmount()
+  })
+})
+
+describe('the real loop, as the model answered it', () => {
+  test('HKL confirmed and the preflight relisted for NZE/PAW: one step, HKL still ticked, nothing duplicated', () => {
+    // The model's own answer to "the HKL preflight is clean, now run it on NZE/PAW" (a real run, kinds and all).
+    const before = [
+      step('pre', { kind: 'sql', title: 'Run the read-only preflight', key: 't:only preflight read run', targets: ['HKL', 'NZE/PAW'] }),
+      step('app', { kind: 'sql', title: 'Apply migration 97', key: 'p:sql:supabase/97_hs_submission_amendments.sql', path: 'supabase/97_hs_submission_amendments.sql', targets: ['HKL', 'NZE/PAW'] }),
+      step('pr', { kind: 'pr', title: 'Merge PR #76', key: 't:76 merge pr' }),
+    ]
+    const answer = JSON.stringify({
+      steps: [
+        { group: 'you', kind: 'check', title: 'Run the read-only preflight on NZE/PAW and paste the output', asksBack: true },
+        { group: 'you', kind: 'sql', title: 'Apply migration 97 on HKL, then NZE/PAW, and run the verifier on each', path: 'supabase/97_hs_submission_amendments.sql', targets: ['HKL', 'NZE/PAW'], after: 1 },
+        { group: 'you', kind: 'pr', title: 'Merge PR #76 once both verifiers pass', after: 2 },
+      ],
+      resolved: ['pre@HKL'],
+    })
+    const said = 'HKL is clear. Run the same preflight on NZE/PAW and paste it. Then apply supabase/97_hs_submission_amendments.sql on HKL first, then NZE/PAW. Merge PR #76 once both verifiers pass.'
+    const out = parseExtraction(answer, said)
+    const { steps } = reconcile(before, out?.steps ?? [], out?.resolved ?? [], T0 + 5)
+    expect(steps.map(s => s.id)).toEqual(['pre', 'app', 'pr'])
+    const pre = steps[0]!
+    expect([pre.status, pre.targets, pre.doneTargets, pre.asksBack, pre.missed]).toEqual(['open', ['HKL', 'NZE/PAW'], ['HKL'], true, 0])
+    expect(steps.find(s => s.id === 'app')?.after).toBe('pre')
+    expect(summarise(steps).next?.id).toBe('pre')
+  })
+})
+
+describe('the same step, said with more words', () => {
+  test('a title that says all of another, with more, is the same step; short titles are never swallowed', () => {
+    expect(contains('Merge PR #76', 'Merge PR #76 once both verifiers pass')).toBe(true)
+    expect(contains('Merge PR #76', 'Merge PR #77 once CI is green')).toBe(false)
+    expect(contains('Run the tests', 'Run the tests on staging and production')).toBe(false) // two words of meaning
+    expect(contains('Unrelated chore number 1', 'Unrelated chore number 2')).toBe(false)
   })
 })

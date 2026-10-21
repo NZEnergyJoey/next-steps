@@ -1,7 +1,7 @@
 import type { Step } from '../../types'
 
 import type { Incoming } from './extract'
-import { similarity } from './text'
+import { contains, similarity } from './text'
 
 /**
  * Folding a new reply's steps into the list already there. Pure.
@@ -48,13 +48,23 @@ function findMatch(list: Step[], inc: Incoming, taken: Set<string>, stamp: numbe
   }
   for (const pool of pools) {
     const alike = pool
-      .filter(s => s.kind === inc.kind && similarity(s.title, inc.title) >= SAME_TITLE)
+      .filter(s => s.kind === inc.kind && (similarity(s.title, inc.title) >= SAME_TITLE || contains(s.title, inc.title)))
       .sort((a, b) => similarity(b.title, inc.title) - similarity(a.title, inc.title))[0]
     if (alike) return alike
   }
+  // A step part-way through its places, listed again for the places left ("Run the preflight on NZE/PAW" once HKL
+  // is done), is the same step, whatever kind the reply now gives it: a looser likeness, but it must name such a place.
+  const title = inc.title.toLowerCase()
+  const midway = free
+    .filter(s => isOpen(s) && (s.doneTargets ?? []).length > 0 && targetsLeft(s).some(t => title.includes(t.toLowerCase())))
+    .filter(s => similarity(s.title, inc.title) >= MIDWAY_TITLE)
+    .sort((a, b) => similarity(b.title, inc.title) - similarity(a.title, inc.title))[0]
 
-  return undefined
+  return midway
 }
+
+/** How alike the titles of a step part-way through its places and its relisting must be (see findMatch). */
+const MIDWAY_TITLE = 0.3
 
 function nextId(list: Step[], stamp: number, i: number): string {
   let id = `${stamp}-${i}`
@@ -68,12 +78,24 @@ export function reconcile(existing: Step[], incoming: Incoming[], resolvedIds: s
   const resolved: Step[] = []
   const added: Step[] = []
   const taken = new Set<string>()
+  /** Steps the reply spoke of without closing them (one place done): not aged, but still free to match. */
+  const heard = new Set<string>()
   /** Where each incoming step landed, so "after step 2" can name a real step once all have their places. */
   const placed: Array<Step | undefined> = []
 
-  for (const id of resolvedIds) {
+  for (const said of resolvedIds) {
+    // "id@HKL": done in that one place. The step closes only when no place is left.
+    const at = said.indexOf('@')
+    const id = at < 0 ? said : said.slice(0, at)
     const s = list.find(x => x.id === id && isOpen(x))
     if (!s) continue
+    if (at >= 0) {
+      const place = (s.targets ?? []).find(t => t.toLowerCase() === said.slice(at + 1).trim().toLowerCase())
+      if (place === undefined) continue
+      s.doneTargets = (s.targets ?? []).filter(t => t === place || (s.doneTargets ?? []).includes(t))
+      heard.add(s.id)
+      if (targetsLeft(s).length > 0) continue
+    }
     s.status = 'done'
     s.closedAt = stamp
     s.closedBy = 'reply'
@@ -105,10 +127,13 @@ export function reconcile(existing: Step[], incoming: Incoming[], resolvedIds: s
       hit.url = inc.url
       hit.file = inc.file
       hit.key = inc.key
-      // The places already ticked stay ticked, as long as the reply still names them.
-      const kept = (hit.doneTargets ?? []).filter(t => inc.targets?.some(n => n.toLowerCase() === t.toLowerCase()))
-      hit.targets = inc.targets
-      hit.doneTargets = kept.length > 0 ? kept : undefined
+      // The places already ticked stay ticked, as long as the reply still names them. A relisting that names no
+      // places of its own is about the places left, so the step keeps its places and its ticks.
+      if (inc.targets !== undefined || targetsLeft(hit).length === 0) {
+        const kept = (hit.doneTargets ?? []).filter(t => inc.targets?.some(n => n.toLowerCase() === t.toLowerCase()))
+        hit.targets = inc.targets
+        hit.doneTargets = kept.length > 0 ? kept : undefined
+      }
       hit.asksBack = inc.asksBack
       hit.options = inc.options
 
@@ -140,7 +165,7 @@ export function reconcile(existing: Step[], incoming: Incoming[], resolvedIds: s
   // A reply that handed over steps and left an earlier one out has moved on from it a little.
   // (Reading the same reply again, as Refresh does, is not a further reply and ages nothing.)
   if (age && incoming.length > 0) {
-    for (const s of list) if (isOpen(s) && !taken.has(s.id)) s.missed += 1
+    for (const s of list) if (isOpen(s) && !taken.has(s.id) && !heard.has(s.id)) s.missed += 1
   }
 
   // A new occurrence of something closed long ago replaces its old record instead of sitting beside it.

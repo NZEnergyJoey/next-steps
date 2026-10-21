@@ -4,6 +4,7 @@ import type { Step } from '../../types'
 
 import { clip } from './text'
 import { parseExtraction, type Extraction } from './extract'
+import { targetsLeft } from './merge'
 
 /** Asking the model to read a reply. One small call per long reply; nothing else leaves the machine. */
 
@@ -46,13 +47,14 @@ Rules:
 - Copying text is not a step of its own: put the text in "copy" of the step that uses it.
 - Never invent SQL, commands, paths or URLs. Copy them character-for-character from the reply, or leave the field out.
 - "resolved": ids from the open list that the reply clearly says are now done, by the assistant or because the reader reported it. Leave it [] when unsure. Never give an id that is not in the open list.
+- A listed step with "places to go" may be done in only some of them: give "id@place" for each place the reply clearly says is now done (e.g. the reader pasted HKL's results and the reply says HKL is clean), and the plain id only when every place is done.
 - If the reply asks nothing of the reader, return {"steps": [], "resolved": []}.`
 
 export function buildPrompt(reply: string, open: Step[]): string {
   const listed = open
     .filter(s => s.status === 'open')
     .slice(0, MAX_LISTED)
-    .map(s => `${s.id} | ${s.group} | ${clip(s.title, 100)}`)
+    .map(s => `${s.id} | ${s.group} | ${clip(s.title, 100)}${targetsLeft(s).length > 0 ? ` | places to go: ${targetsLeft(s).join(', ')}` : ''}`)
   const head = listed.length > 0 ? `Open steps already on the reader's list (id | group | title):\n${listed.join('\n')}\n\n` : 'There are no open steps yet.\n\n'
   const body = reply.length > MAX_REPLY ? reply.slice(reply.length - MAX_REPLY) : reply
 

@@ -68,6 +68,18 @@ export const words = (title: string): string[] =>
     .split(/[^a-z0-9]+/)
     .filter(w => (w.length >= 2 || /^\d$/.test(w)) && !STOP.has(w))
 
+/**
+ * Whether one title says everything the other does, with more: "Merge PR #76 once both verifiers pass" contains
+ * "Merge PR #76". The shorter needs three words of meaning, so "Run the tests" is never swallowed by another title.
+ */
+export function contains(a: string, b: string): boolean {
+  const [short, long] = words(a).length <= words(b).length ? [new Set(words(a)), new Set(words(b))] : [new Set(words(b)), new Set(words(a))]
+  if (short.size < 3) return false
+  for (const w of short) if (!long.has(w)) return false
+
+  return true
+}
+
 /** How alike two titles are, 0 to 1 (shared words over all words). */
 export function similarity(a: string, b: string): number {
   const x = new Set(words(a))
