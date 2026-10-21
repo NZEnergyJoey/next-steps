@@ -1,5 +1,6 @@
 import type { Flash, Step } from '../../types'
 
+import { targetsLeft } from './merge'
 import { isStale, type Summary } from './select'
 
 /**
@@ -13,8 +14,11 @@ export const FLASH_MS = 2600
 /** With nothing left open, steps closed this recently still make up the round, so the rail reads "all done". */
 export const DONE_WINDOW_MS = 30 * 60_000
 
-/** One segment of the rail, in the order drawn: finished first (oldest first), then what is still to do. */
-export type Segment = { id: string; state: 'done' | 'skipped' | 'current' | 'todo' }
+/**
+ * One segment of the rail, in the order drawn: finished first (oldest first), then what is still to do. `part` is how
+ * much of the current step is done already (one of its two databases: 0.5).
+ */
+export type Segment = { id: string; state: 'done' | 'skipped' | 'current' | 'todo'; part?: number }
 
 export type Progress = {
   /** The round's segments. Empty when there is nothing to show. */
@@ -43,18 +47,22 @@ export function progressOf(steps: Step[], summary: Summary, now: number): Progre
   const current = open[0]
   const segments: Segment[] = [
     ...finished.map(s => ({ id: s.id, state: s.status === 'skipped' ? ('skipped' as const) : ('done' as const) })),
-    ...open.map(s => ({ id: s.id, state: s === current ? ('current' as const) : ('todo' as const) })),
+    ...open.map(s => (s === current ? { id: s.id, state: 'current' as const, part: partOf(s) } : { id: s.id, state: 'todo' as const })),
   ]
   const total = segments.length
+  const part = current ? partOf(current) : 0
 
   return {
     segments,
     done: finished.length,
     total,
     position: current ? finished.length + 1 : 0,
-    ratio: total === 0 ? 0 : finished.length / total,
+    ratio: total === 0 ? 0 : (finished.length + part) / total,
   }
 }
+
+/** How much of a step's places are ticked, 0 to 1; 0 for a step with none. */
+const partOf = (s: Step) => (s.targets && s.targets.length > 0 ? (s.targets.length - targetsLeft(s).length) / s.targets.length : 0)
 
 /** Open steps for the reader that arrived after they last had the panel open. */
 export function newSince(summary: Summary, seenAt: number): number {

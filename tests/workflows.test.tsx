@@ -7,6 +7,8 @@ import { reconcile, setStatus, setTarget, targetsLeft } from '../hooks/lib/merge
 import { buildPrompt } from '../hooks/lib/model'
 import { contains } from '../hooks/lib/text'
 import { prHref } from '../hooks/lib/git'
+import { progressOf } from '../hooks/lib/progress'
+import { railSvg } from '../hooks/ui/svg'
 import { summarise, waitingOn } from '../hooks/lib/select'
 import { scopeKey } from '../hooks/lib/store'
 import { everywhere } from '../hooks/register'
@@ -342,5 +344,17 @@ describe('waiting ends when the conversation moves on', () => {
     const steps = [step('pre', { missed: 9 }), step('merge', { kind: 'pr', after: 'pre' })]
     expect(waitingOn(steps[1]!, steps)).toBeUndefined()
     expect(summarise(steps).next?.id).toBe('merge')
+  })
+})
+
+describe('progress counts places', () => {
+  test('one of two databases ticked fills half the current segment, and half a step of the ring', () => {
+    const steps = [step('a', { targets: ['HKL', 'NZE/PAW'], doneTargets: ['HKL'] }), step('b')]
+    const p = progressOf(steps, summarise(steps), T0)
+    expect(p.segments).toEqual([{ id: 'a', state: 'current', part: 0.5 }, { id: 'b', state: 'todo' }])
+    expect(p.ratio).toBe(0.25)
+    const svg = railSvg(p)
+    expect((svg.match(/<rect /g) ?? []).length).toBe(4) // track, shimmer and solid for the current step; one for the next
+    expect((svg.match(/<animate /g) ?? []).length).toBe(1)
   })
 })

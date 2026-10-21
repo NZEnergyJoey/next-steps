@@ -66,6 +66,13 @@ export function railSvg(p: Pick<Progress, 'segments'>, height = 6): string {
     const x = +(i * (w + gap)).toFixed(3)
     const fill = s.state === 'done' ? SUCCESS : s.state === 'current' ? ACCENT : s.state === 'skipped' ? SKIPPED : TRACK
     const shimmer = s.state === 'current' ? `<animate attributeName="opacity" values="1;0.4;1" dur="1.8s" repeatCount="indefinite"/>` : ''
+    // A step part-way through its places: the done part solid, the rest shimmering on the track.
+    const part = s.state === 'current' ? Math.min(1, Math.max(0, s.part ?? 0)) : 0
+    if (part > 0) {
+      const solid = +(w * part).toFixed(3)
+
+      return `<rect x="${x}" y="0" width="${+w.toFixed(3)}" height="${height}" rx="0" fill="${TRACK}"/><rect x="${x}" y="0" width="${+w.toFixed(3)}" height="${height}" rx="0" fill="${ACCENT}" fill-opacity="0.45">${shimmer}</rect><rect x="${x}" y="0" width="${solid}" height="${height}" rx="0" fill="${ACCENT}"/>`
+    }
 
     return `<rect x="${x}" y="0" width="${+w.toFixed(3)}" height="${height}" rx="0" fill="${fill}">${shimmer}</rect>`
   })
