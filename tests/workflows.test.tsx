@@ -405,3 +405,25 @@ describe('clearing out what went quiet', () => {
     await ui.unmount()
   })
 })
+
+describe('the printed list', () => {
+  test('/next-steps list shows places and what each step waits for, numbered as in the panel', async ($, on) => {
+    const world = await boot($, on, { model: [answered(reading(STEPS))] })
+    await finishTurn($, world, REPLY)
+    const out = (await $.command.run({ command: 'next-steps', args: 'list', presentation: { isFullscreen: false, columns: 100 } } as unknown as CommandRunInput)) as { text?: string }
+    expect(out.text).toContain('1. [you] Run the read-only preflight (on HKL, NZE/PAW)')
+    expect(out.text).toContain('2. [you] Apply migration 97 (on HKL, NZE/PAW)')
+  })
+})
+
+describe('the printed list, with a wait', () => {
+  test('a waiting step is listed after what it waits for, saying so', async ($, on) => {
+    const world = await boot($, on, {
+      model: [answered(reading([{ group: 'you', kind: 'sql', title: 'Apply migration 97' }, { group: 'you', kind: 'pr', title: 'Merge PR 76', after: 1 }]))],
+    })
+    await finishTurn($, world, reply('Apply migration 97, then merge PR 76 once it is verified.'))
+    const out = (await $.command.run({ command: 'next-steps', args: 'list', presentation: { isFullscreen: false, columns: 100 } } as unknown as CommandRunInput)) as { text?: string }
+    expect(out.text).toContain('1. [you] Apply migration 97')
+    expect(out.text).toContain('2. [you] Merge PR 76 (after 1)')
+  })
+})

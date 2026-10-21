@@ -1,6 +1,6 @@
 {
   "name": "next-steps",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "Turns Claude's replies into a prioritised, colour-coded list of next steps: per-database ticks for migrations, PR links, decisions with answers, steps that wait for others, results sent back in one press, and a view across every worktree.",
   "types": "./types/index.d.ts"
 }

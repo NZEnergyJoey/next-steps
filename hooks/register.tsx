@@ -6,7 +6,7 @@ import type { Flash, Step, StepStatus, View } from '../types'
 import { MIN_ANSWER, readReply } from './lib/model'
 import { reconcile, setStatus, setTarget, targetsLeft, type MergeResult } from './lib/merge'
 import { gitRunner, prHref, readRepo, withFiles } from './lib/git'
-import { ordered, statusText, summarise } from './lib/select'
+import { ordered, statusText, summarise, waitingOn } from './lib/select'
 import { FLASH_MS, liveFlash, newSince, progressOf } from './lib/progress'
 import { DAY_MS, load, loadAll, prune, save } from './lib/store'
 import { ago, fnv, slashes } from './lib/text'
@@ -217,7 +217,12 @@ function listing(list: Step[]): string {
   if (open.length === 0) return 'No next steps.'
   const who = (st: Step) => (st.group === 'claude' ? 'Claude' : st.group === 'decision' ? 'decision' : st.group === 'optional' ? 'optional' : 'you')
   const where = (st: Step) => (st.targets ? ` (on ${st.targets.map(t => (targetsLeft(st).includes(t) ? t : `${t} ✓`)).join(', ')})` : '')
-  const lines = open.map((st, i) => `${i + 1}. [${who(st)}] ${st.title}${where(st)}${st.why ? `: ${st.why}` : ''}`)
+  const waits = (st: Step) => {
+    const n = open.indexOf(waitingOn(st, list) ?? st) + 1
+
+    return n > 0 && open[n - 1] !== st ? ` (after ${n})` : ''
+  }
+  const lines = open.map((st, i) => `${i + 1}. [${who(st)}] ${st.title}${where(st)}${waits(st)}${st.why ? `: ${st.why}` : ''}`)
 
   return [`Next steps (${s.pending} pending${s.claude.length > 0 ? `, ${s.claude.length} for Claude` : ''}):`, ...lines].join('\n')
 }
