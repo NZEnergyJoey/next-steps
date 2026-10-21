@@ -88,26 +88,29 @@ describe('the taskbar', () => {
     await ui.unmount()
   })
 
-  test('Done closes the step in front and the next one takes its place', async ($, on) => {
+  test('Done closes the step in front and the next one takes its place; a decision is answered instead', async ($, on) => {
     const world = await ready($, on)
-    for (const surface of TERMINAL_AND_DESKTOP) {
-      const ui = await $.ui.mount(band(surface))
-      const title = (await ui.find({ type: 'Text', text: /Next steps/ }))?.text ?? ''
-      await ui.press({ key: 'done' })
-      // The finished step lingers a moment on the bar, then the next one takes its place.
-      const moment = (await ui.find({ type: 'Text', text: /✓ Done · / }))?.text ?? ''
-      expect(title).toContain(moment.replace('✓ Done · ', ''))
-      await world.clock.advance(FLASH_MS)
-      expect(await ui.find({ type: 'Text', text: /✓ Done · / })).toBeUndefined()
-      await ui.unmount()
-    }
-    // Two presses, two steps closed: the migration, then the approval. No toast for either: the bar says it.
-    expect(world.calls.toast).toEqual([])
-    const ui = await $.ui.mount(band('terminal'))
-    const text = (await ui.find({ type: 'Text', text: /Next steps/ }))?.text ?? ''
-    expect(text).toContain('1 pending')
-    expect(text).toContain('Open a PR for feat/invoices')
+    const ui = await $.ui.mount(band('desktop'))
+    const title = (await ui.find({ type: 'Text', text: /Next steps/ }))?.text ?? ''
+    await ui.press({ key: 'done' })
+    // The finished step lingers a moment on the bar, then the next one takes its place.
+    const moment = (await ui.find({ type: 'Text', text: /✓ Done · / }))?.text ?? ''
+    expect(title).toContain(moment.replace('✓ Done · ', ''))
+    await world.clock.advance(FLASH_MS)
+    expect(await ui.find({ type: 'Text', text: /✓ Done · / })).toBeUndefined()
+    // Next in front is the approval: a decision is answered in the panel, never ticked from the bar.
+    expect(await ui.find({ type: 'Button', key: 'done' })).toBeUndefined()
+    expect(await ui.find({ type: 'Button', key: 'answer' })).toBeDefined()
     await ui.unmount()
+    // No toast for the closed step: the bar says it.
+    expect(world.calls.toast).toEqual([])
+    for (const surface of TERMINAL_AND_DESKTOP) {
+      const bar = await $.ui.mount(band(surface))
+      const text = (await bar.find({ type: 'Text', text: /Next steps/ }))?.text ?? ''
+      expect(text).toContain('2 pending')
+      expect(text).toContain('Approve dropping the legacy invoices table')
+      await bar.unmount()
+    }
   })
 
   test('when only Claude has something to do, the taskbar offers to hand it over', async ($, on) => {

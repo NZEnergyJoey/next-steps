@@ -143,7 +143,13 @@ export function taskbar(E: ElementTable, m: BandModel, a: BandActions): RenderEl
             Retry
           </Button>
         )}
-        {step && roomy && isYours && !m.flash && (
+        {step && roomy && step.group === 'decision' && !m.flash && (
+          // A decision is answered, not ticked: the panel puts its answers in front of the reader.
+          <Button key="answer" plain hotkey="d" onPress={() => a.open()}>
+            Answer
+          </Button>
+        )}
+        {step && roomy && isYours && step.group !== 'decision' && !m.flash && (
           // A step to run in several places ticks off the next place, not the whole step.
           <Button key="done" plain hotkey="d" onPress={() => (nextPlace !== undefined ? a.tickTarget(step, nextPlace) : a.done(step))}>
             {nextPlace !== undefined ? `✓ ${nextPlace}` : '✓ Done'}

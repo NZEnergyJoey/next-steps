@@ -10,7 +10,7 @@ A Claude Code mod that turns Claude's replies into a prioritised, tickable list 
 ◔  Now  Apply migration 97   Next steps · 3 pending · 1 for Claude   +2 new      #76 ↗   ✓ NZE/PAW   Open
 ```
 
-The ring fills as you work through the round. The step in front leads, wearing its state (Now, Decide or Claude); `d` ticks it off, or, for a step with several databases, the next one (`✓ NZE/PAW`). A step that names a PR links to it. New steps wait quietly as `+2 new` until you open the panel, and a finished step lingers a moment as `✓ Done · …` while the next takes its place. It narrows with the window by dropping words, never wrapping; `Retry` appears only when a read has failed. Collapse it with the prompt's own `[-]`. On surfaces with no bar (VS Code, mobile) the same summary goes to the status line.
+The ring fills as you work through the round. The step in front leads, wearing its state (Now, Decide or Claude); `d` ticks it off, or, for a step with several databases, the next one (`✓ NZE/PAW`); a decision shows `Answer` instead, which opens the panel at its answers. A step that names a PR links to it. New steps wait quietly as `+2 new` until you open the panel, and a finished step lingers a moment as `✓ Done · …` while the next takes its place. It narrows with the window by dropping words, never wrapping; `Retry` appears only when a read has failed. Collapse it with the prompt's own `[-]`. On surfaces with no bar (VS Code, mobile) the same summary goes to the status line.
 
 **A panel** (`o`, the `open` button, or `/next-steps`):
 

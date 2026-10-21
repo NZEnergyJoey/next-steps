@@ -365,3 +365,15 @@ describe('the status line', () => {
     expect(statusText(summarise(steps))).toBe('Next steps · 1 pending · Apply migration 105 (NZE/PAW next)')
   })
 })
+
+describe('a decision on the bar', () => {
+  test('is answered, not ticked: the bar offers Answer, which opens the panel', async ($, on) => {
+    const world = await boot($, on, { model: [answered(reading([STEPS[2]!]))] })
+    await finishTurn($, world, REPLY)
+    const bar = await $.ui.mount(band('desktop', { bodyColumns: 120 }))
+    expect(await bar.find({ type: 'Button', key: 'done' })).toBeUndefined()
+    await bar.press({ key: 'answer' })
+    expect(world.calls.opens).toBe(1)
+    await bar.unmount()
+  })
+})
