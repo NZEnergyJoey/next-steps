@@ -51,6 +51,32 @@ describe('reading places, answers and results', () => {
     expect(out?.steps.map(s => s.targets)).toEqual([['HKL', 'NZE/PAW'], undefined, undefined])
   })
 
+  test('a step that only copies text hands it to the step that uses it', () => {
+    const sql = 'select 1;'
+    const out = parseExtraction(
+      JSON.stringify({
+        steps: [
+          { title: 'Copy the preflight script to the clipboard', kind: 'command', copy: sql },
+          { title: 'Run the preflight on HKL and NZE/PAW', kind: 'sql', targets: ['HKL', 'NZE/PAW'], asksBack: true },
+          { title: 'Apply migration 97', kind: 'sql', after: 2 },
+        ],
+      }),
+      `Run this on HKL, then NZE/PAW: ${sql}`,
+    )
+    expect(out?.steps.map(s => [s.title, s.copy, s.after])).toEqual([
+      ['Run the preflight on HKL and NZE/PAW', sql, undefined],
+      ['Apply migration 97', undefined, 0],
+    ])
+  })
+
+  test('a project id in brackets is not part of the name of a place', () => {
+    const out = parseExtraction(
+      JSON.stringify({ steps: [{ title: 'Run the preflight', kind: 'sql', targets: ['HKL (toxsylietzenosymsipx)', 'NZE/PAW (imleiihuudgxldnewbfy)'] }] }),
+      'Run it on HKL (toxsylietzenosymsipx), then NZE/PAW (imleiihuudgxldnewbfy).',
+    )
+    expect(out?.steps[0]?.targets).toEqual(['HKL', 'NZE/PAW'])
+  })
+
   test('only a decision has options; asking for something back is a flag', () => {
     const out = parseExtraction(
       JSON.stringify({

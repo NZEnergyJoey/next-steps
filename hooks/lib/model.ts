@@ -28,7 +28,7 @@ Each item of "steps":
  "language": "optional: highlighter id for copy: sql, bash, ts, json ...",
  "path": "optional: file path exactly as written in the reply; if the reply says the file is in a particular folder, give that folder joined with the path",
  "url": "optional: URL exactly as written in the reply",
- "targets": "optional list: when the step must be done in more than one place, each place in order, named exactly as the reply writes it, e.g. the databases HKL then NZE/PAW, or staging then production",
+ "targets": "optional list: when the step must be done in more than one place, each place in order, by its short name exactly as the reply writes it, e.g. the databases HKL then NZE/PAW, or staging then production. A name with a slash, such as NZE/PAW, is ONE place. Leave out ids and notes in brackets",
  "asksBack": "optional: true when the reader must send something back afterwards (paste a query's results, say what they saw, answer a question)",
  "options": "optional list, decisions only: the 2 to 4 answers the reply offers, a few words each",
  "after": "optional: the number (counting from 1, in this list) of an EARLIER step that must be finished first, only when the reply says to wait for it, e.g. merge only after the migration is verified"}
@@ -43,6 +43,7 @@ Rules:
 - Not every suggestion is a task. When unsure between "you" and "optional", choose "optional". An offer such as "let me know if you want X" is "claude" or "optional", never "you".
 - Steps in the order they should be done. One action per step, but the same action in several places (one migration run on two databases) is ONE step with "targets". Running a SQL migration file is kind "sql" with its path; pasting SQL is kind "sql" with copy. At most 12 steps.
 - Skip work the assistant says it already did.
+- Copying text is not a step of its own: put the text in "copy" of the step that uses it.
 - Never invent SQL, commands, paths or URLs. Copy them character-for-character from the reply, or leave the field out.
 - "resolved": ids from the open list that the reply clearly says are now done, by the assistant or because the reader reported it. Leave it [] when unsure. Never give an id that is not in the open list.
 - If the reply asks nothing of the reader, return {"steps": [], "resolved": []}.`

@@ -209,7 +209,9 @@ export function parseExtraction(output: string, reply?: string): Extraction | un
 
     const group = toGroup(item.group ?? item.owner)
     // A target must be named in the reply: a place to run SQL is never guessed. Two or more, or it is no list.
-    let targets = names(item.targets, MAX_TARGETS, LIMIT.target)
+    // "HKL (toxsylietzenosymsipx)" is the place HKL: a project id or note in brackets is not part of its name.
+    const bare = Array.isArray(item.targets) ? item.targets.map(t => (typeof t === 'string' ? t.replace(/\s*\([^)]*\)\s*$/, '') : t)) : item.targets
+    let targets = names(bare, MAX_TARGETS, LIMIT.target)
     if (targets !== undefined && reply !== undefined) targets = targets.filter(t => reply.toLowerCase().includes(t.toLowerCase()))
     if (targets !== undefined && targets.length < 2) targets = undefined
     const options = group === 'decision' ? names(item.options, MAX_OPTIONS, LIMIT.option) : undefined
@@ -237,7 +239,27 @@ export function parseExtraction(output: string, reply?: string): Extraction | un
     if (steps.length >= MAX_PER_REPLY) break
   }
 
+  foldCopySteps(steps)
+
   return { steps, resolved }
+}
+
+/**
+ * "Copy the preflight script", then "Run the preflight": one step, not two. A step that only copies text hands it to
+ * the step after it, when that one has none, and goes; what waited for either waits for the one that is left.
+ */
+export function foldCopySteps(steps: Incoming[]): void {
+  for (let i = 0; i < steps.length - 1; i++) {
+    const copying = steps[i]
+    const using = steps[i + 1]
+    if (copying?.copy === undefined || using === undefined || using.copy !== undefined || !/^copy\b/i.test(copying.title)) continue
+    using.copy = copying.copy
+    using.language = copying.language
+    using.key = stepKey(using)
+    steps.splice(i, 1)
+    for (const s of steps) if (s.after !== undefined && s.after > i) s.after -= 1
+    if (using.after === i) using.after = undefined
+  }
 }
 
 /**
