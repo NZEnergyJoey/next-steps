@@ -21,7 +21,7 @@ The ring fills as you work through the round. The step in front leads, wearing i
 - **Steps that wait.** "Merge only after 97 is verified": the merge shows ◷ **Waiting** and *after 2*, never takes the spotlight while the migration is open, and moves up by itself once it is done.
 - **Replies tick places too.** Paste HKL's preflight back and, when Claude says HKL is clean, HKL ticks itself.
 - **Send result.** A step that wants its output back (a preflight query, what you saw) has `b` Send result, which starts that reply in the prompt for you to paste into.
-- **Decisions with answers.** When Claude offers choices, each is its own button (`y` the first, `n` the second); otherwise `y` approve / `n` decline. Either fills the prompt with your answer.
+- **Decisions with answers.** When Claude offers choices, each is listed (wrapping at any width) with its own Choose button (`y` the first, `n` the second); otherwise `y` approve / `n` decline. Either fills the prompt with your answer.
 - **Pull requests a click away.** A step that names a PR ("Merge PR #76") links to it, in the panel and as `#76 ↗` on the bar; "Open a PR" links to the compare page.
 - Claude's steps hand back with one key (`a` fills the prompt; nothing is sent for you).
 - The header names the branch the list belongs to, so with many worktrees open you know whose list it is.

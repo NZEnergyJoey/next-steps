@@ -273,18 +273,31 @@ export function panel(E: ElementTable, m: PanelModel, a: PanelActions): RenderEl
           </Box>
         )}
 
+        {isOpen && s.group === 'decision' && s.options && (
+          // The answers the reply offers, each a line of its own that wraps, with a short button: an answer can be
+          // longer than a narrow panel is wide, and a button never wraps.
+          <Box flexDirection="column" gap={rich ? 'xs' : 0} minWidth={0}>
+            {s.options.map((o, i) => (
+              <Box key={`optionrow-${s.id}-${i}`} flexDirection="row" gap={1} alignItems="flex-start">
+                <Text color={TONES.decide.color}>{TONES.decide.glyph}</Text>
+                <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
+                  <Text wrap="wrap">{shown(o)}</Text>
+                </Box>
+                <Box flexShrink={0}>{btn(`option-${i}`, i === 0 ? 'y' : i === 1 ? 'n' : undefined, 'Choose', () => a.handOff(s, 'option', o))}</Box>
+              </Box>
+            ))}
+          </Box>
+        )}
+
         <Box flexDirection="row" gap={rich ? 'sm' : 2} flexWrap="wrap" marginTop={rich && isSpot ? 'xs' : 0}>
           {s.copy && btn('copy', 'c', copyLabel(s), press => a.copy(s.copy ?? '', copyWhat(s), press))}
           {isOpen && s.asksBack && btn('result', 'b', 'Send result', () => a.handOff(s, 'result'))}
           {isOpen && s.group === 'claude' && btn('ask', 'a', 'Ask Claude', () => a.handOff(s, 'ask'))}
-          {isOpen &&
-            s.group === 'decision' &&
-            s.options?.map((o, i) => btn(`option-${i}`, i === 0 ? 'y' : i === 1 ? 'n' : undefined, o, () => a.handOff(s, 'option', o)))}
           {isOpen && s.group === 'decision' && !s.options && btn('approve', 'y', 'Approve', () => a.handOff(s, 'approve'))}
           {isOpen && s.group === 'decision' && !s.options && btn('decline', 'n', 'Decline', () => a.handOff(s, 'decline'))}
           {/* With places to tick, Done ticks the next one, as it does on the bar; the last tick closes the step. */}
           {isOpen && left.length > 0
-            ? btn('done', 'd', `✓ ${left[0]} done`, () => a.tickTarget(s.id, left[0] ?? '', true))
+            ? btn('done', 'd', `✓ ${left[0]}`, () => a.tickTarget(s.id, left[0] ?? '', true))
             : btn('done', 'd', isOpen ? '✓ Mark done' : 'Reopen', () => a.setStatus(s.id, isOpen ? 'done' : 'open'))}
           {isOpen && btn('skip', 's', 'Skip', () => a.setStatus(s.id, 'skipped'), true)}
         </Box>

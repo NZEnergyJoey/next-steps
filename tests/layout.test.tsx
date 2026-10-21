@@ -75,13 +75,18 @@ describe('long words get places to break', () => {
 const PATH = 'supabase/migrations/134_purchasing_notes_both_invoice_and_po.sql'
 const SQL = 'alter table purchasing_notes add column purchase_order_id uuid references purchase_orders(id) on delete cascade;'
 const LONG = [
-  { group: 'you', kind: 'sql', title: 'Run migration 134_purchasing_notes_both_invoice_and_po.sql on the NZE and PAW Supabase projects before the release', why: 'Lets a purchasing note sit on both an invoice and its purchase order.', copy: SQL, language: 'sql', path: PATH },
-  { group: 'decision', kind: 'action', title: 'Approve merging feat/purchasing-notes-on-invoices-and-purchase-orders into main once CI is green' },
+  { group: 'you', kind: 'sql', title: 'Run migration 134_purchasing_notes_both_invoice_and_po.sql on the NZE and PAW Supabase projects before the release', why: 'Lets a purchasing note sit on both an invoice and its purchase order.', copy: SQL, language: 'sql', path: PATH, targets: ['HKL', 'NZE/PAW'], asksBack: true },
+  {
+    group: 'decision',
+    kind: 'action',
+    title: 'Approve merging feat/purchasing-notes-on-invoices-and-purchase-orders into main once CI is green',
+    options: ['Merge now and watch the three production deploys', 'Wait until the migration verifier has passed on every database'],
+  },
   { group: 'you', kind: 'pr', title: 'Open a PR for feat/next-steps-redesign-with-coloured-status-tabs' },
   { group: 'claude', kind: 'check', title: 'Run the full test suite and the type-check across hooks, tests and types' },
   { group: 'optional', kind: 'action', title: 'Rename purchasingNotesBothInvoiceAndPurchaseOrderHelper to match the new table name' },
 ]
-const LONG_REPLY = reply(`Run ${PATH} in the SQL editor:`, '```sql', SQL, '```', 'Then open the PR and approve the merge; I can run the tests.')
+const LONG_REPLY = reply(`Run ${PATH} in the SQL editor on HKL, then NZE/PAW:`, '```sql', SQL, '```', 'Then open the PR and approve the merge; I can run the tests.')
 
 type Node = RenderElement & { type: string; props?: Record<string, unknown>; children?: Array<Node | string> }
 

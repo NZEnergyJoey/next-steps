@@ -35,7 +35,7 @@ const GROUP_WORDS = new Map<string, StepGroup>([
   ['recommended', 'optional'],
 ])
 
-export const LIMIT = { title: 200, why: 400, copy: 12000, language: 20, path: 500, url: 2000, target: 24, option: 60 } as const
+export const LIMIT = { title: 200, why: 400, copy: 12000, language: 20, path: 500, url: 2000, target: 20, option: 80 } as const
 
 /** At most this many targets per step, and options per decision. */
 export const MAX_TARGETS = 6

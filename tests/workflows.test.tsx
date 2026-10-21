@@ -143,7 +143,7 @@ describe('in the panel and on the bar', () => {
     expect(await ui.find({ type: 'Text', text: /^1\/2$/ })).toBeDefined()
     expect((await bar.find({ type: 'Button', key: 'done' }))?.text).toBe('✓ NZE/PAW')
 
-    expect((await ui.find({ type: 'Button', key: 'done' }))?.text).toBe('✓ NZE/PAW done') // the panel's d ticks the next place too
+    expect((await ui.find({ type: 'Button', key: 'done' }))?.text).toBe('✓ NZE/PAW') // the panel's d ticks the next place too, as the bar's does
     await bar.press({ key: 'done' })
     expect(await ui.find({ type: 'Text', text: /✓ Done · Run the read-only preflight/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^Now · step 2 of 3$/ })).toBeDefined()
@@ -273,7 +273,7 @@ describe('a reply that finishes one place', () => {
     await finishTurn($, world, reply('Thanks, the HKL preflight is clean: every row says PASS. Now run the same query on NZE/PAW and paste that too.'))
     const ui = await $.ui.mount(pane('desktop'))
     expect(await ui.find({ type: 'Text', text: /^1\/2$/ })).toBeDefined()
-    expect((await ui.find({ type: 'Button', key: 'done' }))?.text).toBe('✓ NZE/PAW done')
+    expect((await ui.find({ type: 'Button', key: 'done' }))?.text).toBe('✓ NZE/PAW')
     await ui.unmount()
   })
 })
